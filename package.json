@@ -1,0 +1,116 @@
+{
+  "name": "dsh-unrestricted",
+  "version": "0.2.6-mobile.2",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.2.3-0"
+  },
+  "private": true,
+  "description": "Toggleable unrestricted mode for DeepSeek Harness: fuses execution rules into the active standard, ptc, cordis, minimal, and subagent prompts; also ships a native status strip, panel and toggle for the DSH Go Android app",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yexi-by/dsh-unrestricted.git"
+  },
+  "homepage": "https://github.com/yexi-by/dsh-unrestricted#readme",
+  "bugs": {
+    "url": "https://github.com/yexi-by/dsh-unrestricted/issues"
+  },
+  "type": "module",
+  "main": "src/node.js",
+  "exports": {
+    ".": "./src/node.js",
+    "./mobile": "./src/mobile.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "src",
+    "lib",
+    "docs",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "README.ja.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "locale",
+    "install-mobile.sh",
+    "doctor-mobile.sh",
+    "CHANGELOG.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
+    }
+  },
+  "dshGo": {
+    "v": 1,
+    "title": {
+      "zh": "鐮撮檺",
+      "en": "Unrestricted"
+    },
+    "icon": "bolt",
+    "contributes": {
+      "composer.strip": [
+        {
+          "id": "status",
+          "icon": "bolt",
+          "panel": "unrestricted"
+        }
+      ],
+      "panels": [
+        {
+          "id": "unrestricted",
+          "title": {
+            "zh": "鐮撮檺",
+            "en": "Unrestricted"
+          },
+          "icon": "bolt",
+          "placement": [
+            "session.tab",
+            "features"
+          ]
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.spec.mjs",
+    "build:mobile": "node tools/build-mobile.mjs",
+    "doctor:mobile": "sh doctor-mobile.sh",
+    "dump-prompts": "node tools/dump-prompts.mjs --repo ../../deepseek-harness --out tests/fixtures"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-scope": ">=0.2.0-rc.2 <0.2.3-0",
+    "@deepseek-ai/dsh-system-prompt": ">=0.2.0-rc.2 <0.2.3-0",
+    "@deepseek-ai/schemastery": "^3.18.5"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-scope": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.6.0"
+  }
+}

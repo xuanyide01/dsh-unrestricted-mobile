@@ -1,0 +1,13 @@
+# dsh-unrestricted bundle layer: one row mounts the plugin's node half; the
+# browser half is discovered through the package's dsh.client manifest and
+# served by the client-module registry. Prompt fusion happens in the node
+# half's assemble waterfall listener, not here.
+#
+# No `connection` override here on purpose. A patch replaces the targeted row's
+# whole `config`, and the web profile that both `dsh web` and the DSH Go app run
+# already mounts Connection: overriding it could break a host that configures
+# Connection differently. The browser half registers its private RPC through
+# `ctx.inject(['connection'])` whenever that service exists.
+- insert:
+    - id: unrestricted
+      name: 'dsh-unrestricted'
