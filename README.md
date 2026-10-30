@@ -29,6 +29,8 @@ DSH 在每次请求前组装系统提示词。本插件挂在 `system-prompt/ass
 
 ## 安装
 
+发布包：[Releases · v0.2.6-mobile.2](https://github.com/xuanyide01/dsh-unrestricted-mobile/releases/latest)（dsh-unrestricted-0.2.6-mobile.2.tgz，SHA-256 见 SHA256SUMS.txt）。
+
 ### 安卓（DSH Go）
 
 手机上的 `dsh plugin add` 是 link 安装，插件目录在 profile 之外。把压缩包放到手机「下载」后，在 **App 自带的终端**里：

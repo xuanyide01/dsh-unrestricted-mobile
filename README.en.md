@@ -29,6 +29,8 @@ Every preset (standard / ptc / cordis / minimal) is checked against the stock an
 
 ## Install
 
+Release asset: [v0.2.6-mobile.2](https://github.com/xuanyide01/dsh-unrestricted-mobile/releases/latest) (dsh-unrestricted-0.2.6-mobile.2.tgz, digest in SHA256SUMS.txt).
+
 ### Android (DSH Go)
 
 `dsh plugin add` on the phone is a link install: the plugin directory lives outside the profile. Copy the tarball to the phone's Downloads, then in the **app's own terminal**:
