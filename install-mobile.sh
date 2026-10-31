@@ -4,10 +4,10 @@
 # 在 App 自带的终端（本机引擎的 shell）里运行：
 #   sh install-mobile.sh                 # 安装脚本所在目录
 #   sh install-mobile.sh /sdcard/Download/dsh-unrestricted
-#   sh install-mobile.sh /sdcard/Download/dsh-unrestricted-0.2.6-mobile.1.tgz
+#   sh install-mobile.sh /sdcard/Download/dsh-unrestricted-0.2.6-mobile.3.tgz
 #
-# 做的事：把插件放到 /root/.dsh/dsh-go/plugins/，修好它的模块解析，
-# 装进 web profile，最后做一次导入自检并打印结果。
+# 做的事：把插件放到 /root/.dsh/dsh-go/plugins/，装进 web profile，
+# 最后做一次导入自检并打印结果。
 set -eu
 
 PROFILE="${DSH_PROFILE:-web}"
@@ -45,25 +45,21 @@ fi
 
 [ -f "$DEST/package.json" ] || die "$DEST 里没有 package.json"
 
-# 1) 先装进 profile，再补模块解析。
+# 1) 装进 profile（link 安装：目录留着，插件才能起）。
 VERSION=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$DEST/package.json" | head -n 1)
 say "安装 dsh-unrestricted ${VERSION:-?} 到 profile“$PROFILE”"
 
 dsh plugin --profile "$PROFILE" remove dsh-unrestricted >/dev/null 2>&1 || true
 dsh plugin --profile "$PROFILE" add "$DEST"
 
-# 2) 模块解析：dsh 用 link 方式安装时，插件目录在 profile 之外，Node 会按
-#    真实路径向上找 node_modules，找不到时插件 entry 会一直「未运行」。
-#    把 profile 的 node_modules 链进来，位置和宿主完全一致，也不会出现两份实例。
-if [ -d "$PROFILE_DIR/node_modules" ] && [ ! -e "$DEST/node_modules" ]; then
-  if ln -s "$PROFILE_DIR/node_modules" "$DEST/node_modules" 2>/dev/null; then
-    say "已链接模块目录：$DEST/node_modules → $PROFILE_DIR/node_modules"
-  else
-    say "警告：无法创建 node_modules 链接（导入自检会说明是否受影响）"
-  fi
+# 2) 0.2.6-mobile.2 留下的 node_modules 链接已经不需要（src/deps.js 自己找引擎包）；
+#    留着也无害，这里只在旧链接指向不存在目录时清掉。
+if [ -L "$DEST/node_modules" ] && [ ! -d "$DEST/node_modules" ]; then
+  rm -f "$DEST/node_modules"
+  say "清掉失效的 node_modules 链接"
 fi
 
-# 3) 导入自检：和引擎加载插件走同一套解析
+# 3) 导入自检：不依赖 profile 的 node_modules，和引擎无关的纯 Node 也能加载。
 say "--- 导入自检 ---"
 if node --input-type=module -e "
 try {
@@ -83,6 +79,7 @@ cat <<EOF
 
 已安装。接下来：
   1. App →「插件」→ dsh-unrestricted → 配置 → 打开「启用破限」
+     或者：输入框上方的「破限」胶囊点一下
      或者：对话详情页 →「插件」→「破限」→「开启破限」
   2. 输入框上方状态条显示「破限 开 · 4/4」即四模式都已注入
   3. 改过 lib/ 或 src/ 后要在「插件 → 重启内核以重载」里重启才能生效

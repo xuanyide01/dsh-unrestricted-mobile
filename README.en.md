@@ -2,7 +2,7 @@
 
 Prompt-level unrestricted mode for DeepSeek Harness — now working on the **DSH Go** Android client. The desktop/web build keeps its settings card; the phone gets a native status strip, a native panel and a native switch.
 
-- Version: `0.2.6-mobile.2`
+- Version: `0.2.6-mobile.3`
 - Engine: DSH `>=0.2.1-rc.2 <0.2.3-0` (measured on `0.2.1-rc.4` in the app, `0.2.1-rc.5` on desktop)
 - License: MIT
 
@@ -29,7 +29,7 @@ Every preset (standard / ptc / cordis / minimal) is checked against the stock an
 
 ## Install
 
-Release asset: [v0.2.6-mobile.2](https://github.com/xuanyide01/dsh-unrestricted-mobile/releases/latest) (dsh-unrestricted-0.2.6-mobile.2.tgz, digest in SHA256SUMS.txt).
+Release asset: [v0.2.6-mobile.3](https://github.com/xuanyide01/dsh-unrestricted-mobile/releases/latest) (dsh-unrestricted-0.2.6-mobile.3.tgz, digest in SHA256SUMS.txt).
 
 ### Android (DSH Go)
 
@@ -37,7 +37,7 @@ Release asset: [v0.2.6-mobile.2](https://github.com/xuanyide01/dsh-unrestricted-
 
 ```sh
 rm -rf /root/.dsh/dsh-go/plugins/dsh-unrestricted
-tar xzf /sdcard/Download/dsh-unrestricted-0.2.6-mobile.2.tgz -C /root/.dsh/dsh-go/plugins/
+tar xzf /sdcard/Download/dsh-unrestricted-0.2.6-mobile.3.tgz -C /root/.dsh/dsh-go/plugins/
 sh /root/.dsh/dsh-go/plugins/dsh-unrestricted/install-mobile.sh
 ```
 

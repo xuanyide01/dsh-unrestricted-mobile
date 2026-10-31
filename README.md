@@ -2,8 +2,9 @@
 
 DeepSeek Harness（DSH）的提示词破限插件，**在安卓客户端 DSH Go 上也能用**：桌面网页版保留原来的设置卡片，手机端额外提供原生状态条、原生面板和原生开关。
 
-- 插件版本：`0.2.6-mobile.2`
+- 插件版本：`0.2.6-mobile.3`
 - 适用引擎：DSH `>=0.2.1-rc.2 <0.2.3-0`（手机端实测 `0.2.1-rc.4`，桌面端实测 `0.2.1-rc.5`）
+- 适用客户端：DSH Go `1.0.4`（桥接 `dsh-go-bridge 0.4.0`，原生插件协议 v1）；更早的 1.0.x 也能用，只是少一个胶囊
 - 许可证：MIT
 
 ## 鸣谢
@@ -29,7 +30,7 @@ DSH 在每次请求前组装系统提示词。本插件挂在 `system-prompt/ass
 
 ## 安装
 
-发布包：[Releases · v0.2.6-mobile.2](https://github.com/xuanyide01/dsh-unrestricted-mobile/releases/latest)（dsh-unrestricted-0.2.6-mobile.2.tgz，SHA-256 见 SHA256SUMS.txt）。
+发布包：[Releases · v0.2.6-mobile.3](https://github.com/xuanyide01/dsh-unrestricted-mobile/releases/latest)（dsh-unrestricted-0.2.6-mobile.3.tgz，SHA-256 见 SHA256SUMS.txt）。
 
 ### 安卓（DSH Go）
 
@@ -37,16 +38,16 @@ DSH 在每次请求前组装系统提示词。本插件挂在 `system-prompt/ass
 
 ```sh
 rm -rf /root/.dsh/dsh-go/plugins/dsh-unrestricted
-tar xzf /sdcard/Download/dsh-unrestricted-0.2.6-mobile.2.tgz -C /root/.dsh/dsh-go/plugins/
+tar xzf /sdcard/Download/dsh-unrestricted-0.2.6-mobile.3.tgz -C /root/.dsh/dsh-go/plugins/
 sh /root/.dsh/dsh-go/plugins/dsh-unrestricted/install-mobile.sh
 ```
 
-脚本会依次：放目录 → `dsh plugin --profile web add <目录>` → 把 profile 的 `node_modules` 链进插件目录（解决 link 安装下的模块解析）→ 跑一次导入自检，打印 `OK 插件模块可以加载` 或具体报错。
+脚本会依次：放目录 → `dsh plugin --profile web add <目录>` → 跑一次导入自检，打印 `OK 插件模块可以加载` 或具体报错。
 
 装完「插件 → 重启内核以重载」，再到 `dsh-unrestricted → 配置` 打开「启用破限」。
 
-> 已经装过 `.1` 版本的，可以只补一条链接再重启内核：
-> `ln -s /root/.dsh/profiles/web/node_modules /root/.dsh/dsh-go/plugins/dsh-unrestricted/node_modules`
+> 从 `0.2.6-mobile.3` 起插件不再需要 profile 的 `node_modules` 链接：引擎包由
+> `src/deps.js` 按安装锚点自己找，找不到也有兜底。旧链接留着不影响，删掉也不影响。
 
 ### 桌面 / 网页版
 
@@ -60,10 +61,11 @@ dsh plugin --profile web add /path/to/dsh-unrestricted
 
 ## 使用
 
-手机上三个入口，写的是同一个 `enabled`：
+手机上四个入口，写的是同一个 `enabled`：
 
 | 位置 | 内容 |
 |---|---|
+| 输入框上方胶囊「破限」 | 一次点按切换开关，回一条 toast |
 | 输入框上方状态条 | `破限 开 · 4/4` / `破限 关` / `破限 锚点异常`（点开进面板） |
 | 对话详情 →「插件」面板 | 开关、四模式注入状态、规则指纹、重新检测 |
 | 插件详情页配置表单 | 「启用破限」原生开关，中英文说明 |
@@ -78,14 +80,14 @@ dsh plugin --profile web add /path/to/dsh-unrestricted
 
 | 预设 | 原版 | 融合后 | 计划模式（原 → 融合） |
 |---|---|---|---|
-| standard | 4459 B | 15051 B | 6823 → 17764 B，计划注记 ✓ |
-| ptc | 39288 B | 50282 B | 41652 → 52995 B ✓ |
-| cordis | 4459 B | 15051 B | 6823 → 17764 B ✓ |
+| standard | 4292 B | 14884 B | 6656 → 17597 B，计划注记 ✓ |
+| ptc | 38148 B | 49142 B | 40512 → 51855 B ✓ |
+| cordis | 4292 B | 14884 B | 6656 → 17597 B ✓ |
 | minimal | 46 B | 10638 B | —（complete 段整体替换） |
 
 - rc.4 渲染出的 `original-standard.md` 与本仓库 `tests/fixtures/original-standard.md` 逐字节一致（SHA-256 相同），说明四个锚点在这条版本线上没有漂移。
-- 单测 57 条全绿：`rules` 32、`mobile` 20、`controller` 4、`manifest` 1。
-- DSH Go 的 `plugin-kit check`：`原生界面能显示（状态条 1 · 面板 1）`。
+- 单测 61 条全绿：`rules` 32、`mobile` 21、`controller` 4、`manifest` 1、`deps` 2、`rules` 夹具等。
+- DSH Go 的 `plugin-kit check --load`：`原生界面能显示（胶囊 1 · 状态条 1 · 面板 1）`、`已加载宿主半侧`、四个面板视图全部 `能显示`。
 - 复现方式：`node tools/probe-rc4.mjs --root <装了 @deepseek-ai/dsh 的目录> [--link]`。
 
 ## 目录

@@ -45,6 +45,32 @@ export function installMobile(ctx, controller) {
 
     const disposers = []
 
+    /**
+     * Flip the same `enabled` the web card flips.
+     * Shared by the input-box capsule and the panel's primary button so the two
+     * can never disagree.
+     * @param {string | undefined} locale - app locale from the tap event.
+     * @returns {Promise<{ok: boolean, effect: {toast: string}}>} outcome plus its one effect.
+     */
+    async function toggleFromTap(locale) {
+      const before = snapshot()?.enabled === true
+      let ok = false
+      try {
+        ok = (await controller.setEnabled(before !== true)) !== false
+      } catch {
+        ok = false
+      }
+      const effect = { toast: actionToast('toggle', ok ? { ok: true, enabled: before !== true } : { ok: false }, locale) }
+      return { ok, effect }
+    }
+
+    // Input-box capsule (manifest `composer.actions`): one tap to flip the mode
+    // without opening a panel. Absent on hosts older than the action surface.
+    if (typeof dshGo.on === 'function') {
+      const off = dshGo.on('toggle', async (scope, event) => (await toggleFromTap(event?.locale)).effect)
+      if (typeof off === 'function') disposers.push(off)
+    }
+
     if (typeof dshGo.strip === 'function') {
       const strip = dshGo.strip(STRIP_ID, (scope, emit, caps) => {
         const push = () => {
@@ -66,14 +92,8 @@ export function installMobile(ctx, controller) {
         view: (scope, caps) => panelView(snapshot(), caps?.locale),
         actions: {
           toggle: async (scope, event) => {
-            let ok = false
-            try {
-              ok = await controller.setEnabled(snapshot()?.enabled !== true) !== false
-            } catch {
-              ok = false
-            }
-            const text = actionToast('toggle', { ok, enabled: snapshot()?.enabled === true }, event?.locale)
-            return ok ? { toast: text, refresh: PANEL_ID } : { toast: text }
+            const { ok, effect } = await toggleFromTap(event?.locale)
+            return ok ? { ...effect, refresh: PANEL_ID } : effect
           },
           recheck: async (scope, event) => {
             let ok = true

@@ -150,10 +150,15 @@ function presetRow(presetId, state, w) {
 export function panelView(snapshot, locale) {
   const w = words(locale)
   if (snapshot === undefined || snapshot === null) {
+    // `callout` + `actions` exist in every protocol v1 component set; the
+    // richer `emptyState` control does not, and an unknown node would cost the
+    // whole panel on an older app.
     return {
       type: 'stack',
+      title: w.title,
       children: [
-        { type: 'emptyState', title: w.title, message: w.noHost, icon: 'bolt' },
+        { type: 'callout', tone: 'warn', text: w.noHost },
+        { type: 'actions', items: [{ label: w.recheck, action: 'recheck', icon: 'refresh' }] },
       ],
     }
   }

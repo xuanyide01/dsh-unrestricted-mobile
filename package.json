@@ -1,6 +1,6 @@
 {
   "name": "dsh-unrestricted",
-  "version": "0.2.6-mobile.2",
+  "version": "0.2.6-mobile.3",
   "engines": {
     "dsh": ">=0.2.1-rc.2 <0.2.3-0"
   },
@@ -58,11 +58,21 @@
   "dshGo": {
     "v": 1,
     "title": {
-      "zh": "鐮撮檺",
+      "zh": "破限",
       "en": "Unrestricted"
     },
     "icon": "bolt",
     "contributes": {
+      "composer.actions": [
+        {
+          "id": "toggle",
+          "label": {
+            "zh": "破限",
+            "en": "Unrest"
+          },
+          "icon": "bolt"
+        }
+      ],
       "composer.strip": [
         {
           "id": "status",
@@ -74,7 +84,7 @@
         {
           "id": "unrestricted",
           "title": {
-            "zh": "鐮撮檺",
+            "zh": "破限",
             "en": "Unrestricted"
           },
           "icon": "bolt",
@@ -101,6 +111,12 @@
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-scope": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-system-prompt": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
       "optional": true
     }
   },

@@ -30,8 +30,7 @@
  * $DSH_HOME/profiles/web/cordis.patch.yml). Switching affects the NEXT assembly of any live
  * or future agent — never an in-flight request or a logged session event.
  */
-import z from '@deepseek-ai/schemastery'
-import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
+import { fallbackSchema, renderPrompt, z } from './deps.js'
 import { installMobile } from './mobile.js'
 import {
   ANCHORS, PRESETS, PRESET_RULES, contractFingerprint, fuseSections, fusedMinimalPrompt, renderPreview,
@@ -50,8 +49,12 @@ export const inject = ['systemPrompt', 'loader']
 
 const RPC_CHANNEL = '/dsh-unrestricted'
 
-export const Config = z.object({
-  enabled: z.boolean().default(false).description({
+// The engine's schemastery when reachable, a shape-compatible subset otherwise
+// (see deps.js). Either way `config.get()` and the settings form keep working.
+const schema = z ?? fallbackSchema
+
+export const Config = schema.object({
+  enabled: schema.boolean().default(false).description({
     zh: '启用破限：把执行规则融合进当前预设的系统提示词，下一轮对话起生效',
     en: 'Enable unrestricted mode: fuse the execution rules into the active preset prompt, from the next turn',
   }),
@@ -68,10 +71,28 @@ function ok(value) {
 }
 
 /**
+ * Read `enabled` from a Cordis config handle, a plain object, or nothing.
+ *
+ * In the engine the second `apply` argument is the Schemastery-validated value
+ * (`.get()`); a host that mounts the plugin without a schema — the plugin kit's
+ * fake host, a minimal composition — passes the raw object instead.
+ * @param {unknown} config - whatever the host handed us.
+ * @returns {boolean} the toggle, defaulting to off.
+ */
+function readEnabled(config) {
+  try {
+    const value = typeof config?.get === 'function' ? config.get() : config
+    return value?.enabled === true
+  } catch {
+    return false
+  }
+}
+
+/**
  * @param ctx - plugin context carrying systemPrompt and loader, plus optional
  *   settings / agentPresets / connection / dshGo services.
  */
-export function apply(ctx, config) {
+export function apply(ctx, config = {}) {
   // The settings mirror exists only for the web settings card; a host without
   // that service (some DSH Go compositions) keeps working without it.
   ctx.inject(['settings'], (settingsCtx) => {
@@ -79,7 +100,7 @@ export function apply(ctx, config) {
   })
 
   const state = {
-    enabled: config.get().enabled,
+    enabled: readEnabled(config),
     /** presetId -> issue strings; a preset with an empty list is verified. */
     startup: new Map(),
     /** presetId -> in-flight startup check. */
@@ -397,6 +418,10 @@ export function apply(ctx, config) {
         return { presetId, contract, available: false, reason: fused.issues.join('; ') }
       }
       const variables = { ...assembly.variables, ...previewVariables() }
+      if (renderPrompt === undefined) {
+        // Fusion itself needs no renderer; only this preview text does.
+        return { presetId, contract, available: false, reason: 'preview needs @deepseek-ai/dsh-system-prompt, which this host does not expose' }
+      }
       const text = renderPreview({ ...assembly, sections: fused.sections, variables }, renderPrompt)
       return { presetId, contract, available: true, source: 'standing', ...summarize(text) }
     } catch (error) {
@@ -529,7 +554,7 @@ export function apply(ctx, config) {
     // Keep the deployed top-level fusion available for the card's preview.
     // Subagents may carry custom personas or restricted sections, so they do
     // not overwrite the preset's top-level preview cache.
-    if (!isSubagent) {
+    if (!isSubagent && renderPrompt !== undefined) {
       try {
         state.fusedText.set(presetId, renderPreview({ ...original, sections: fused.sections }, renderPrompt))
       } catch {
@@ -563,7 +588,7 @@ export function apply(ctx, config) {
 
   ctx.effect(() => {
     const unwatch = ctx.on('loader/volatile-update', () => {
-      const enabled = config.get().enabled
+      const enabled = readEnabled(config)
       if (enabled === state.enabled) return
       state.enabled = enabled
       if (enabled) onEnable()

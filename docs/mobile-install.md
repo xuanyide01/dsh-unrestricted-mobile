@@ -1,6 +1,6 @@
 # 装到 DSH Go（安卓）
 
-本包 `dsh-unrestricted 0.2.6-mobile.1` 同时带两套界面：
+本包 `dsh-unrestricted 0.2.6-mobile.3` 同时带两套界面：
 
 | 在哪 | 界面 | 开关在哪 |
 |---|---|---|
@@ -29,12 +29,12 @@ mkdir -p /root/.dsh/dsh-go/plugins
 cd /root/.dsh/dsh-go/plugins
 # 有网：直接拉仓库
 git clone --depth 1 https://github.com/yexi-by/dsh-unrestricted.git
-cd dsh-unrestricted && git checkout v0.2.6-mobile.1
+cd dsh-unrestricted && git checkout v0.2.6-mobile.3
 ```
 
 **B. 从手机存储拷（离线推荐）**
 
-1. 把 `dsh-unrestricted` 整个目录（或 `dsh-unrestricted-0.2.6-mobile.1.tgz`）放到手机「下载」。
+1. 把 `dsh-unrestricted` 整个目录（或 `dsh-unrestricted-0.2.6-mobile.3.tgz`）放到手机「下载」。
 2. 设置里打开「访问手机文件」。
 3. App 终端：
 
@@ -42,7 +42,7 @@ cd dsh-unrestricted && git checkout v0.2.6-mobile.1
 mkdir -p /root/.dsh/dsh-go/plugins
 cp -r /sdcard/Download/dsh-unrestricted /root/.dsh/dsh-go/plugins/
 # 或者用 tgz
-tar xzf /sdcard/Download/dsh-unrestricted-0.2.6-mobile.1.tgz -C /root/.dsh/dsh-go/plugins/
+tar xzf /sdcard/Download/dsh-unrestricted-0.2.6-mobile.3.tgz -C /root/.dsh/dsh-go/plugins/
 ```
 
 **C. 用 adb（开发机）**
@@ -108,7 +108,7 @@ rm -rf /root/.dsh/dsh-go/plugins/dsh-unrestricted
 
 **插件详情页显示「尚未就绪 · 0/1 个组件运行中」「未运行」？**
 
-手机上的 `dsh plugin add` 是 **link 安装**：插件目录留在 `/root/.dsh/dsh-go/plugins/`，profile 里只有一个链接。Node 按真实路径解析模块，插件里 `import '@deepseek-ai/schemastery'` 这类宿主包就找不到了，入口会一直挂着不运行。
+手机上的 `dsh plugin add` 是 **link 安装**：插件目录留在 `/root/.dsh/dsh-go/plugins/`，profile 里只有一个链接。从 `0.2.6-mobile.3` 起插件不再硬 import 引擎包（`src/deps.js` 自己按安装锚点找），所以这一层不再需要额外链接。
 
 先跑诊断（只读，输出可直接复制）：
 
@@ -116,16 +116,11 @@ rm -rf /root/.dsh/dsh-go/plugins/dsh-unrestricted
 sh /root/.dsh/dsh-go/plugins/dsh-unrestricted/doctor-mobile.sh
 ```
 
-看「导入自检」那行：
+看最后两段：
 
-- `OK src/node.js` → 模块能加载，问题在服务或配置，把整段输出发出来。
-- `FAIL ERR_MODULE_NOT_FOUND ... '@deepseek-ai/...'` → 就是上面说的解析问题，修法只有一步：
-
-```sh
-ln -s /root/.dsh/profiles/web/node_modules /root/.dsh/dsh-go/plugins/dsh-unrestricted/node_modules
-```
-
-然后「插件」页点「刷新」，或「插件 → 重启内核以重载」。`install-mobile.sh` 从 0.2.6-mobile.2 起会自动建这个链接。
+- `独立导入` 显示 `OK` → 模块能加载；问题在服务、桥接或开关配置，把整段输出发出来。
+- `独立导入` 显示 `FAIL` → 真的缺文件或语法错误，按提示行修。
+- `引擎包` 显示 `可选依赖：schemastery=有 render=有` 是正常状态；两个都 `无` 也能跑（只剩提示词预览不可用）。
 
 **状态条不出现？**
 - 只有**本机引擎**有桥接（`dsh-go-bridge`），SSH / 中转主机没有，那种情况用网页版设置卡片或直接在插件详情页开开关。

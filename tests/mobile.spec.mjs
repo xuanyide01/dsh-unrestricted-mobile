@@ -38,9 +38,20 @@ describe('dsh-go manifest', () => {
     assert.equal(go.contributes['composer.strip'][0].panel, PANEL_ID)
   })
 
+  it('puts one tap-to-toggle capsule over the input box', () => {
+    const go = manifest.dshGo
+    const actions = go.contributes['composer.actions']
+    assert.equal(actions.length, 1)
+    assert.equal(actions[0].id, 'toggle')
+    for (const label of [actions[0].label.zh, actions[0].label.en]) {
+      assert.ok(label.length <= 10, `label too long: ${label}`)
+    }
+  })
+
   it('keeps every slot id unique and inside the documented charset', () => {
     const go = manifest.dshGo
     const ids = [
+      ...go.contributes['composer.actions'].map(row => row.id),
       ...go.contributes['composer.strip'].map(row => row.id),
       ...go.contributes.panels.map(row => row.id),
     ]
@@ -121,9 +132,13 @@ describe('panel view', () => {
     assert.equal(view.children.at(-1).type, 'actions')
   })
 
-  it('degrades to an empty state when the host exposes no status', () => {
+  it('degrades to protocol-v1 components when the host exposes no status', () => {
     const view = panelView(undefined, 'zh')
-    assert.equal(view.children[0].type, 'emptyState')
+    // `emptyState` is a newer control; an app that does not know it would drop
+    // the whole view, so the fallback uses callout + actions.
+    assert.equal(view.children[0].type, 'callout')
+    assert.equal(view.children.at(-1).type, 'actions')
+    assert.ok(view.children.every(child => ['callout', 'actions'].includes(child.type)))
   })
 
   it('is JSON-serialisable and inside the 40-node view budget', () => {
@@ -146,8 +161,12 @@ describe('action toast', () => {
 describe('bridge wiring', () => {
   /** Fake ctx: `inject(['dshGo'])` fires immediately with a recording bridge. */
   function harness(snapshotValue) {
-    const registered = { panels: new Map(), strips: new Map() }
+    const registered = { panels: new Map(), strips: new Map(), handlers: new Map() }
     const go = {
+      on(id, handler) {
+        registered.handlers.set(id, handler)
+        return () => registered.handlers.delete(id)
+      },
       panel(id, options) {
         registered.panels.set(id, options)
         return () => registered.panels.delete(id)
@@ -173,6 +192,15 @@ describe('bridge wiring', () => {
     const { registered } = harness(snapshot())
     assert.ok(registered.panels.has(PANEL_ID))
     assert.ok(registered.strips.has(STRIP_ID))
+  })
+
+  it('answers the input-box capsule with a toggle and a toast', async () => {
+    const { registered, calls } = harness(snapshot({ enabled: false }))
+    const handler = registered.handlers.get('toggle')
+    assert.equal(typeof handler, 'function')
+    const result = await handler({}, { surface: 'composer.actions', id: 'toggle', locale: 'zh' })
+    assert.deepEqual(calls, [true])
+    assert.equal(result.toast, '已开启破限')
   })
 
   it('flips the toggle through the controller and asks for a repaint', async () => {

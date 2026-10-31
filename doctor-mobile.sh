@@ -20,34 +20,49 @@ printf 'dsh       : %s\n' "$(dsh --version 2>/dev/null || echo '未知')"
 printf 'DSH_HOME  : %s\n' "$DSH_HOME"
 printf 'profile   : %s\n' "$PROFILE_DIR"
 printf '插件目录  : %s\n' "$PLUGIN"
-
-line "引擎版本"
-ENGINE="$PROFILE_DIR/node_modules/@deepseek-ai/dsh/package.json"
-if [ -f "$ENGINE" ]; then
-  node -e "console.log(require('$ENGINE').version)" 2>/dev/null || echo 读取失败
-else
-  echo "找不到 $ENGINE"
-fi
+printf 'App 运行时: %s\n' "$(sed -n 's/.*"runtimeVersion": *"\([^"]*\)".*/\1/p' /etc/dsh-app/runtime.json 2>/dev/null || echo '没有 /etc/dsh-app/runtime.json（不是本机引擎）')"
+printf '桥接版本  : %s\n' "$(sed -n 's/.*"dshGoBridge": *"\([^"]*\)".*/\1/p' /etc/dsh-app/runtime.json 2>/dev/null || echo '未知')"
 
 line "插件文件"
-for f in package.json src/node.js src/rules.js src/mobile.js lib/client.js cordis.patch.yml; do
+for f in package.json src/node.js src/deps.js src/rules.js src/mobile.js src/mobile-view.js lib/client.js cordis.patch.yml; do
   [ -f "$PLUGIN/$f" ] && echo "  ok   $f" || echo "  缺失 $f"
 done
-[ -L "$PLUGIN/node_modules" ] && echo "  node_modules -> $(readlink "$PLUGIN/node_modules" 2>/dev/null)" || true
+if [ -L "$PLUGIN/node_modules" ]; then
+  echo "  node_modules -> $(readlink "$PLUGIN/node_modules" 2>/dev/null)（0.2.6-mobile.3 起不需要，留着无害）"
+fi
+printf '  版本      : %s\n' "$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$PLUGIN/package.json" 2>/dev/null | head -n 1)"
 
-line "宿主依赖是否可见（按插件的真实路径解析）"
-for p in schemastery dsh-system-prompt dsh-scope; do
-  if [ -d "$PROFILE_DIR/node_modules/@deepseek-ai/$p" ]; then echo "  profile 有 $p"; else echo "  profile 无 $p"; fi
-done
+line "引擎包（可选依赖：找到就用真库，找不到用内置兜底）"
+node --input-type=module -e "
+const m = await import('file://$PLUGIN/src/deps.js')
+console.log('  schemastery       :', m.engineDeps.schema ? '有' : '无（用兜底 schema）')
+console.log('  dsh-system-prompt :', m.engineDeps.render ? '有' : '无（只有提示词预览不可用）')
+if (m.engineDeps.schemaFile) console.log('  解析到            :', m.engineDeps.schemaFile)
+" 2>&1
 
-line "导入自检（引擎加载插件的同一套解析）"
+line "独立导入（不依赖 profile 的 node_modules 链接）"
 node --input-type=module -e "
 try {
   const m = await import('file://$PLUGIN/src/node.js')
   console.log('OK', Object.keys(m).join(','))
+  const cfg = m.Config['~standard'].validate({ enabled: true })
+  console.log('config 校验:', JSON.stringify(cfg.value.get()))
 } catch (error) {
   console.log('FAIL', error?.code ?? '', error?.message ?? error)
 }" 2>&1
+
+line "清单（App 读的那一份）"
+node -e "
+const p = require('$PLUGIN/package.json')
+const go = p.dshGo ?? {}
+const c = go.contributes ?? {}
+const ids = [].concat(c['composer.actions'] ?? [], c['composer.strip'] ?? [], c.panels ?? []).map(x => x.id)
+console.log('  dshGo.v   :', go.v)
+console.log('  title     :', go.title?.zh, '/', go.title?.en)
+console.log('  插槽      : 胶囊', (c['composer.actions'] ?? []).length, '· 状态条', (c['composer.strip'] ?? []).length, '· 面板', (c.panels ?? []).length)
+console.log('  id        :', ids.join(', '))
+console.log('  id 唯一   :', new Set(ids).size === ids.length ? '是' : '否（App 会丢掉重复项）')
+" 2>&1
 
 line "profile 里的安装记录"
 grep -n 'dsh-unrestricted' "$PROFILE_DIR/package.json" 2>/dev/null || echo "  package.json 里没有 dsh-unrestricted"

@@ -36,7 +36,7 @@ const skipTar = process.argv.includes('--skip-tar')
 const stage = join(outDir, pkg.name)
 
 /** Files that must exist for the package to boot. */
-const REQUIRED = ['src/node.js', 'src/rules.js', 'src/mobile.js', 'src/mobile-view.js', 'package.json', 'cordis.patch.yml']
+const REQUIRED = ['src/node.js', 'src/deps.js', 'src/rules.js', 'src/mobile.js', 'src/mobile-view.js', 'package.json', 'cordis.patch.yml']
 
 /** Directories copied whole (the `files` list in package.json). */
 const ENTRIES = pkg.files ?? ['src', 'lib', 'docs', 'cordis.patch.yml', 'README.md', 'LICENSE']
@@ -113,4 +113,4 @@ if (existsSync(installDoc)) copyFileSync(installDoc, join(outDir, 'INSTALL-mobil
 const manifest = JSON.parse(readFileSync(join(stage, 'package.json'), 'utf8'))
 if (manifest.dshGo?.v !== 1) throw new Error('packaged manifest lost its dshGo block')
 console.log(`staged ${copied} files -> ${stage}`)
-console.log(`version ${pkg.version}; dshGo strip=${manifest.dshGo.contributes['composer.strip'].length} panels=${manifest.dshGo.contributes.panels.length}`)
+console.log(`version ${pkg.version}; dshGo actions=${manifest.dshGo.contributes['composer.actions'].length} strip=${manifest.dshGo.contributes['composer.strip'].length} panels=${manifest.dshGo.contributes.panels.length}`)
