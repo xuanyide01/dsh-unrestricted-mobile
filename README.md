@@ -2,7 +2,7 @@
 
 DeepSeek Harness（DSH）的提示词破限插件，**在安卓客户端 DSH Go 上也能用**：桌面网页版保留原来的设置卡片，手机端额外提供原生状态条、原生面板和原生开关。
 
-- 插件版本：`0.2.6-mobile.3`
+- 插件版本：`0.2.6-mobile.4`
 - 适用引擎：DSH `>=0.2.1-rc.2 <0.2.3-0`（手机端实测 `0.2.1-rc.4`，桌面端实测 `0.2.1-rc.5`）
 - 适用客户端：DSH Go `1.0.4`（桥接 `dsh-go-bridge 0.4.0`，原生插件协议 v1）；更早的 1.0.x 也能用，只是少一个胶囊
 - 许可证：MIT
@@ -30,7 +30,7 @@ DSH 在每次请求前组装系统提示词。本插件挂在 `system-prompt/ass
 
 ## 安装
 
-发布包：[Releases · v0.2.6-mobile.3](https://github.com/xuanyide01/dsh-unrestricted-mobile/releases/latest)（dsh-unrestricted-0.2.6-mobile.3.tgz，SHA-256 见 SHA256SUMS.txt）。
+发布包：[Releases · v0.2.6-mobile.4](https://github.com/xuanyide01/dsh-unrestricted-mobile/releases/latest)（dsh-unrestricted-0.2.6-mobile.4.tgz，SHA-256 见 SHA256SUMS.txt）。
 
 ### 安卓（DSH Go）
 
@@ -38,7 +38,7 @@ DSH 在每次请求前组装系统提示词。本插件挂在 `system-prompt/ass
 
 ```sh
 rm -rf /root/.dsh/dsh-go/plugins/dsh-unrestricted
-tar xzf /sdcard/Download/dsh-unrestricted-0.2.6-mobile.3.tgz -C /root/.dsh/dsh-go/plugins/
+tar xzf /sdcard/Download/dsh-unrestricted-0.2.6-mobile.4.tgz -C /root/.dsh/dsh-go/plugins/
 sh /root/.dsh/dsh-go/plugins/dsh-unrestricted/install-mobile.sh
 ```
 
