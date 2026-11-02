@@ -51,7 +51,7 @@ if [ "${1:-}" = "--no-push" ]; then
 fi
 
 say "== 4/4 推送并创建 Release $TAG"
-git tag -a "$TAG" -m "$TAG" 2>/dev/null || say "tag $TAG 已存在，复用"
+git -c user.name="dsh" -c user.email="dsh@local" tag -a "$TAG" -m "$TAG" 2>/dev/null || say "tag $TAG 已存在，复用"
 # 有 token 就直接用它推（不用先配 git 凭据）；没有就走本地 git 凭据。
 REMOTE="https://github.com/$REPO.git"
 if [ -n "${GITHUB_TOKEN:-}" ]; then
