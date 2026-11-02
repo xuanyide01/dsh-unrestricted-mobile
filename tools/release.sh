@@ -52,6 +52,11 @@ fi
 
 say "== 4/4 推送并创建 Release $TAG"
 git tag -a "$TAG" -m "$TAG" 2>/dev/null || say "tag $TAG 已存在，复用"
-git push origin "HEAD:$BRANCH"
-git push origin "$TAG"
+# 有 token 就直接用它推（不用先配 git 凭据）；没有就走本地 git 凭据。
+REMOTE="https://github.com/$REPO.git"
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/$REPO.git"
+fi
+git push "$REMOTE" "HEAD:$BRANCH"
+git push "$REMOTE" "$TAG"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}" node tools/upload-release.mjs --dist "$DIST" --repo "$REPO" --tag "$TAG" ${1:+$1}
