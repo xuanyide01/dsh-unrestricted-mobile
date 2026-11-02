@@ -2,7 +2,7 @@
 
 DeepSeek Harness（DSH）的提示词破限插件，**在安卓客户端 DSH Go 上也能用**：桌面网页版保留原来的设置卡片，手机端额外提供原生状态条、原生面板和原生开关。
 
-- 插件版本：`0.2.6-mobile.4`
+- 插件版本：`0.2.6-mobile.5`
 - 适用引擎：DSH `>=0.2.1-rc.2 <0.2.3-0`（手机端实测 `0.2.1-rc.4`，桌面端实测 `0.2.1-rc.5`）
 - 适用客户端：DSH Go `1.0.4`（桥接 `dsh-go-bridge 0.4.0`，原生插件协议 v1）；更早的 1.0.x 也能用，只是少一个胶囊
 - 许可证：MIT
@@ -26,11 +26,13 @@ DSH 在每次请求前组装系统提示词。本插件挂在 `system-prompt/ass
 - 计划模式、PTC（`run_code`）、结构化子代理三处只加边界注记，说明"约束的是交付形式，不是内容规模"；
 - 关闭开关时原样放行，提示词与官方逐字节一致。
 
-每个预设（standard / ptc / cordis / minimal）融合前都会核对官方锚点文本；任何一处对不上，该模式退回官方原文并在界面上标出，不会拼出损坏的提示词。
+融合按**结构化的段名**（`deployment:persona-prefix`、`plan:policy`、`tools:ptc-only`、`tool:structured_output`）定位，不再比对官方原文字符串，所以上游提示词改写措辞也不会失配；缺少 persona 段的预设直接跳过注入并在界面上标出，不会拼出损坏的提示词。
+
+插件还会检查自己有没有新版本：面板和网页卡片显示版本号与「有新版 / 已是最新」，手机上可直接点「检查更新」（检查的是本仓库的 GitHub Release）。
 
 ## 安装
 
-发布包：[Releases · v0.2.6-mobile.4](https://github.com/xuanyide01/dsh-unrestricted-mobile/releases/latest)（dsh-unrestricted-0.2.6-mobile.4.tgz，SHA-256 见 SHA256SUMS.txt）。
+发布包：[Releases · v0.2.6-mobile.5](https://github.com/xuanyide01/dsh-unrestricted-mobile/releases/latest)（dsh-unrestricted-0.2.6-mobile.5.tgz，SHA-256 见 SHA256SUMS.txt）。
 
 ### 安卓（DSH Go）
 
@@ -38,7 +40,7 @@ DSH 在每次请求前组装系统提示词。本插件挂在 `system-prompt/ass
 
 ```sh
 rm -rf /root/.dsh/dsh-go/plugins/dsh-unrestricted
-tar xzf /sdcard/Download/dsh-unrestricted-0.2.6-mobile.4.tgz -C /root/.dsh/dsh-go/plugins/
+tar xzf /sdcard/Download/dsh-unrestricted-0.2.6-mobile.5.tgz -C /root/.dsh/dsh-go/plugins/
 sh /root/.dsh/dsh-go/plugins/dsh-unrestricted/install-mobile.sh
 ```
 
@@ -66,13 +68,13 @@ dsh plugin --profile web add /path/to/dsh-unrestricted
 | 位置 | 内容 |
 |---|---|
 | 输入框上方胶囊「破限」 | 一次点按切换开关，回一条 toast |
-| 输入框上方状态条 | `破限 开 · 4/4` / `破限 关` / `破限 锚点异常`（点开进面板） |
-| 对话详情 →「插件」面板 | 开关、四模式注入状态、规则指纹、重新检测 |
+| 输入框上方状态条 | `破限 开 · 4/4` / `破限 关` / `破限 注入异常`（点开进面板） |
+| 对话详情 →「插件」面板 | 开关、四模式注入状态、插件版本与更新状态、重新检测、检查更新 |
 | 插件详情页配置表单 | 「启用破限」原生开关，中英文说明 |
 
-`4/4` 表示 standard / ptc / cordis / minimal 四个预设的锚点全部匹配、注入成功；只要有一个显示「锚点未匹配」，那个模式就会退回官方提示词，其余不受影响。
+`4/4` 表示 standard / ptc / cordis / minimal 四个预设都已注入成功；哪个预设缺少 persona 段，那个模式就不注入并在面板里标出来，其余的照常。
 
-桌面网页版仍是原来的设置卡片：模式状态、规则指纹、提示词预览（行数/字节数）。
+桌面网页版仍是原来的设置卡片：版本与更新状态、四个模式的状态、提示词预览（行数/字节数），更新检查在卡片里直接完成。
 
 ## 验证
 
@@ -80,13 +82,13 @@ dsh plugin --profile web add /path/to/dsh-unrestricted
 
 | 预设 | 原版 | 融合后 | 计划模式（原 → 融合） |
 |---|---|---|---|
-| standard | 4292 B | 14884 B | 6656 → 17597 B，计划注记 ✓ |
-| ptc | 38148 B | 49142 B | 40512 → 51855 B ✓ |
-| cordis | 4292 B | 14884 B | 6656 → 17597 B ✓ |
-| minimal | 46 B | 10638 B | —（complete 段整体替换） |
+| standard | 4292 B | 14791 B | 6656 → 17504 B，计划注记 ✓ |
+| ptc | 38148 B | 49049 B | 40512 → 51762 B ✓ |
+| cordis | 4292 B | 14791 B | 6656 → 17504 B ✓ |
+| minimal | 46 B | 10545 B | —（complete 段整体替换） |
 
-- rc.4 渲染出的 `original-standard.md` 与本仓库 `tests/fixtures/original-standard.md` 逐字节一致（SHA-256 相同），说明四个锚点在这条版本线上没有漂移。
-- 单测 61 条全绿：`rules` 32、`mobile` 21、`controller` 4、`manifest` 1、`deps` 2、`rules` 夹具等。
+- 融合按段名定位：rc.4 的四个预设都插入了 `unrestricted:execution-mode`，计划模式下计划注记保留在渲染文本里。
+- 单测 60 条全绿（含 deps 兜底、手机视图、控制器、清单）。
 - DSH Go 的 `plugin-kit check --load`：`原生界面能显示（胶囊 1 · 状态条 1 · 面板 1）`、`已加载宿主半侧`、四个面板视图全部 `能显示`。
 - 复现方式：`node tools/probe-rc4.mjs --root <装了 @deepseek-ai/dsh 的目录> [--link]`。
 
@@ -94,7 +96,7 @@ dsh plugin --profile web add /path/to/dsh-unrestricted
 
 ```
 src/node.js         引擎半侧：融合逻辑 + 开关状态（桌面/手机共用）
-src/rules.js        锚点、规则文本、纯融合函数
+src/rules.js        规则文本、结构化融合函数、版本比较
 src/mobile.js       手机半侧：注册状态条 / 面板 / 动作
 src/mobile-view.js  面板视图与状态条文案（纯函数，可单测）
 lib/client.js       网页半侧（React 设置卡片）
@@ -128,7 +130,7 @@ ln -s /root/.dsh/profiles/web/node_modules /root/.dsh/dsh-go/plugins/dsh-unrestr
 
 **状态条/面板不出现？** 只有本机引擎带 `dsh-go-bridge`；SSH、中转主机没有，用插件详情页的开关或网页版卡片。
 
-**「锚点未匹配」？** 官方提示词文本变了，按 `tools/probe-rc4.mjs` 的流程复现并更新 `src/rules.js` 的 `ANCHORS`。
+**某个预设显示「未注入」？** 该预设的装配里没有 `deployment:persona-prefix` 段（自定义/委派预设常见）。按 `tools/probe-rc4.mjs` 复现，看 `fuseSections` 返回的 issue 码。
 
 ## 限制
 

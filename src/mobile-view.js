@@ -4,13 +4,13 @@
  * be unit-tested without a host, a bridge, or the DSH engine.
  *
  * The app renders these JSON views with its own widgets; nothing here executes
- * on the phone. See dsh-go/docs/plugins/components.md for the component set and
- * limits (16 components, panel titles <= 16 chars, actions <= 4).
+ * on the phone. See dsh-go's plugin docs for the component set and limits
+ * (panel title <= 16 chars, actions <= 4, view <= 32 KiB).
  *
  * @module dsh-unrestricted/mobile-view
  */
 
-/** One preset's row label and the wording of its fusion state, both locales. */
+/** One preset's row label, both locales. */
 const PRESET_TEXT = {
   standard: { zh: '标准模式', en: 'Standard' },
   ptc: { zh: 'PTC 模式', en: 'PTC' },
@@ -18,12 +18,12 @@ const PRESET_TEXT = {
   minimal: { zh: '最小模式', en: 'Minimal' },
 }
 
-/** Wording for the four fusion states the host reports. */
+/** Wording for the fusion states the host reports. */
 const STATE_TEXT = {
   off: { zh: '已关闭', en: 'Off', tone: 'muted' },
   checking: { zh: '检测中', en: 'Checking', tone: 'info' },
   active: { zh: '已注入', en: 'Active', tone: 'good' },
-  failed: { zh: '锚点未匹配', en: 'Anchor mismatch', tone: 'bad' },
+  failed: { zh: '未注入', en: 'Not fused', tone: 'bad' },
 }
 
 const WORDS = {
@@ -32,44 +32,60 @@ const WORDS = {
     switch: '破限开关',
     on: '已开启',
     off: '已关闭',
-    contract: '规则指纹',
+    version: '插件版本',
+    update: '更新',
     modes: '适用模式',
-    modesValue: '标准 · PTC · Cordis · 最小',
     enable: '开启破限',
     disable: '关闭破限',
     recheck: '重新检测',
+    checkUpdate: '检查更新',
     hint: '开启后从下一轮对话起生效；关闭即恢复官方提示词。',
-    issue: (text) => `锚点未匹配：${text}`,
+    issue: (text) => `该预设缺少 persona 段，已跳过注入（${text}）`,
     noHost: '引擎未提供状态接口',
     toggleOn: '已开启破限',
     toggleOff: '已关闭破限',
     toggleFailed: '开关未生效，请到插件详情页设置',
     rechecked: '已重新检测',
+    updateIdle: '未检查',
+    updateChecking: '检测中',
+    updateAvailable: (v) => `有新版 v${v}`,
+    updateLatest: '已是最新',
+    updateUpdated: '已更新，重启引擎后生效',
+    updateFailed: '检查失败，可稍后再试',
+    updateStarted: '正在检查更新…',
     stripOn: (ready, total) => `破限 开 · ${ready}/${total}`,
     stripOff: '破限 关',
-    stripFailed: '破限 锚点异常',
+    stripFailed: '破限 注入异常',
   },
   en: {
     title: 'Unrestricted',
     switch: 'Unrestricted mode',
     on: 'On',
     off: 'Off',
-    contract: 'Rule fingerprint',
+    version: 'Version',
+    update: 'Update',
     modes: 'Presets',
-    modesValue: 'Standard · PTC · Cordis · Minimal',
     enable: 'Enable',
     disable: 'Disable',
     recheck: 'Re-check',
+    checkUpdate: 'Check update',
     hint: 'Takes effect from the next turn; off restores the stock prompt.',
-    issue: (text) => `Anchor mismatch: ${text}`,
+    issue: (text) => `This preset has no persona section, so fusion was skipped (${text})`,
     noHost: 'The engine exposes no status surface',
     toggleOn: 'Unrestricted mode on',
     toggleOff: 'Unrestricted mode off',
     toggleFailed: 'Switch failed — use the plugin settings page',
     rechecked: 'Re-checked',
+    updateIdle: 'Not checked',
+    updateChecking: 'Checking',
+    updateAvailable: (v) => `v${v} available`,
+    updateLatest: 'Up to date',
+    updateUpdated: 'Updated — restart the engine',
+    updateFailed: 'Check failed, try again',
+    updateStarted: 'Checking for updates…',
     stripOn: (ready, total) => `Unrestricted · ${ready}/${total}`,
     stripOff: 'Unrestricted · off',
-    stripFailed: 'Unrestricted · anchor issue',
+    stripFailed: 'Unrestricted · fusion issue',
   },
 }
 
@@ -83,7 +99,7 @@ export function words(locale) {
 }
 
 /**
- * Count presets whose fusion is verifiably live.
+ * Count presets whose fusion is live.
  * @param {{modes?: Record<string, {state: string}>}} snapshot - host status.
  * @returns {{ready: number, total: number}} fused presets over known presets.
  */
@@ -96,13 +112,36 @@ export function readiness(snapshot) {
   }
 }
 
-/** First issue across every preset, or undefined when all anchors matched. */
+/** First issue across every preset, or undefined when all presets fused. */
 function firstIssue(snapshot) {
   for (const id of Object.keys(snapshot?.modes ?? {})) {
     const issue = snapshot.modes[id]?.issues?.[0]
     if (typeof issue === 'string' && issue !== '') return issue
   }
   return undefined
+}
+
+/**
+ * The update row's wording from the host's update snapshot.
+ * @param {{state?: string, latestVersion?: string}} update - host update state.
+ * @param {typeof WORDS.zh} w - word table.
+ * @returns {string} one short line.
+ */
+function updateText(update, w) {
+  switch (update?.state) {
+    case 'available':
+      return update.latestVersion === undefined ? w.updateAvailable('?') : w.updateAvailable(update.latestVersion)
+    case 'up-to-date':
+      return w.updateLatest
+    case 'updated':
+      return w.updateUpdated
+    case 'failed':
+      return w.updateFailed
+    case 'checking':
+      return w.updateChecking
+    default:
+      return w.updateIdle
+  }
 }
 
 /**
@@ -165,6 +204,7 @@ export function panelView(snapshot, locale) {
   const enabled = snapshot.enabled === true
   const { ready, total } = readiness(snapshot)
   const issue = firstIssue(snapshot)
+  const version = typeof snapshot.version === 'string' && snapshot.version !== '' ? snapshot.version : '—'
   const children = [
     {
       type: 'row',
@@ -176,7 +216,8 @@ export function panelView(snapshot, locale) {
     {
       type: 'keyValue',
       items: [
-        { label: w.contract, value: String(snapshot.contract ?? '—') },
+        { label: w.version, value: version },
+        { label: w.update, value: updateText(snapshot.update, w) },
       ],
     },
     {
@@ -194,6 +235,7 @@ export function panelView(snapshot, locale) {
     items: [
       { label: enabled ? w.disable : w.enable, action: 'toggle', icon: 'bolt', style: 'primary' },
       { label: w.recheck, action: 'recheck', icon: 'refresh' },
+      { label: w.checkUpdate, action: 'check-update', icon: 'download' },
     ],
   })
   return { type: 'stack', children }
@@ -201,13 +243,14 @@ export function panelView(snapshot, locale) {
 
 /**
  * Locale-resolved toast text for one panel action outcome.
- * @param {'toggle' | 'recheck'} action - the tapped action id.
+ * @param {'toggle' | 'recheck' | 'check-update'} action - the tapped action id.
  * @param {{ok: boolean, enabled?: boolean}} result - outcome from the host half.
  * @param {string} [locale] - app locale.
  */
 export function actionToast(action, result, locale) {
   const w = words(locale)
   if (action === 'recheck') return result.ok ? w.rechecked : w.toggleFailed
+  if (action === 'check-update') return result.ok ? w.updateStarted : w.updateFailed
   if (!result.ok) return w.toggleFailed
   return result.enabled === true ? w.toggleOn : w.toggleOff
 }

@@ -19,7 +19,7 @@ function snapshot({ enabled = true, states = {} } = {}) {
     const state = states[id] ?? (enabled ? 'active' : 'off')
     modes[id] = { state, issues: state === 'failed' ? [`${id}: persona anchor moved`] : [] }
   }
-  return { enabled, contract: '0123456789abcdef', modes }
+  return { enabled, version: '0.2.6-mobile.5', update: { state: 'idle' }, modes }
 }
 
 describe('dsh-go manifest', () => {
@@ -89,7 +89,7 @@ describe('status strip', () => {
   it('says off, on, and anchor issue in one short line', () => {
     assert.equal(stripData(snapshot({ enabled: false }), 'zh').text, '破限 关')
     assert.equal(stripData(snapshot(), 'zh').text, '破限 开 · 4/4')
-    assert.equal(stripData(snapshot({ states: { standard: 'failed' } }), 'zh').text, '破限 锚点异常')
+    assert.equal(stripData(snapshot({ states: { standard: 'failed' } }), 'zh').text, '破限 注入异常')
   })
 
   it('stays inside the 24-character strip budget', () => {
@@ -101,7 +101,7 @@ describe('status strip', () => {
 })
 
 describe('panel view', () => {
-  it('shows the switch, the preset count, the fingerprint and every preset', () => {
+  it('shows the switch, the preset count, the version and every preset', () => {
     const view = panelView(snapshot(), 'zh')
     assert.equal(view.type, 'stack')
     const metrics = view.children.find(child => child.type === 'row')
@@ -114,21 +114,21 @@ describe('panel view', () => {
     assert.equal(list.items[0].trailing, '已注入')
   })
 
-  it('offers the opposite toggle and a re-check', () => {
+  it('offers the opposite toggle, a re-check and an update check', () => {
     const on = panelView(snapshot(), 'zh').children.at(-1)
     assert.equal(on.type, 'actions')
-    assert.deepEqual(on.items.map(item => item.action), ['toggle', 'recheck'])
+    assert.deepEqual(on.items.map(item => item.action), ['toggle', 'recheck', 'check-update'])
     assert.equal(on.items[0].label, '关闭破限')
     assert.equal(on.items[0].style, 'primary')
     const off = panelView(snapshot({ enabled: false }), 'zh').children.at(-1)
     assert.equal(off.items[0].label, '开启破限')
   })
 
-  it('surfaces a failed anchor instead of pretending the mode is live', () => {
+  it('surfaces a skipped preset instead of pretending the mode is live', () => {
     const view = panelView(snapshot({ states: { ptc: 'failed' } }), 'zh')
     const callout = view.children.find(child => child.type === 'callout')
     assert.equal(callout.tone, 'warn')
-    assert.match(callout.text, /锚点未匹配/)
+    assert.match(callout.text, /缺少 persona/)
     assert.equal(view.children.at(-1).type, 'actions')
   })
 

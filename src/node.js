@@ -1,17 +1,17 @@
 /**
  * dsh-unrestricted host half: fuses the unrestricted execution mode into each
- * preset's ORIGINAL system prompt at assembly time.
+ * preset's ORIGINAL system prompt at assembly time, and provides version check
+ * and self-update support for both DSH Web and DSH Desktop profiles.
  *
  * Mechanism (public interfaces only):
  * - A root `system-prompt/assemble` waterfall listener receives every agent's
  *   assembly (unscoped listeners pass the dsh-scope filter). When enabled, it
- *   verifies the anchors of the agent's preset against the live sections and
- *   returns the same section list with the persona extended in place, the
- *   execution-mode section inserted behind the persona, and boundary notes
- *   appended to the plan / PTC-only / structured-output sections. Tools,
- *   contexts, and variables pass through untouched; when disabled the
- *   listener returns `next()` verbatim, so the prompt is byte-identical to
- *   the unmodified harness.
+ *   fuses the preset's sections structurally: extending `deployment:persona-prefix`
+ *   in place, inserting the `unrestricted:execution-mode` section right after the
+ *   persona, and appending boundary notes to any present `plan:policy`,
+ *   `tools:ptc-only`, or `tool:structured_output` sections. Tools, contexts,
+ *   and variables pass through untouched; when disabled the listener returns
+ *   `next()` verbatim, so the prompt is byte-identical to the unmodified harness.
  * - `minimal` registers its persona with `complete: true`, which the registry
  *   restores AFTER the waterfall, so waterfall edits cannot reach it. For
  *   minimal agents (joined, switched via `agent-preset/selected`, or later
@@ -22,22 +22,31 @@
  *   `agentPresets` service; the plugin detects the active host composition
  *   (`ptc` when `tools:ptc-only` is present, otherwise `standard`) and fuses
  *   their assemblies directly.
- * - Anchor failures (startup standing-scope check or any live assembly) leave
- *   that prompt unchanged and show the failed current-master invariant in the
- *   settings card.
- *
- * The toggle lives in the `unrestricted` settings namespace (persisted to
- * $DSH_HOME/profiles/web/cordis.patch.yml). Switching affects the NEXT assembly of any live
- * or future agent — never an in-flight request or a logged session event.
  */
+import { execFile } from 'node:child_process'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 import { fallbackSchema, renderPrompt, z } from './deps.js'
 import { installMobile } from './mobile.js'
 import {
-  ANCHORS, PRESETS, PRESET_RULES, contractFingerprint, fuseSections, fusedMinimalPrompt, renderPreview,
+  ANCHORS,
+  PRESETS,
+  PRESET_RULES,
+  compareSemver,
+  fuseSections,
+  fusedMinimalPrompt,
+  normalizeVersion,
+  renderPreview,
 } from './rules.js'
 
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'dsh-unrestricted'
+
+/** Current plugin package version. */
+export const PLUGIN_VERSION = '0.2.6-mobile.5'
+
+/** Canonical GitHub repository for release checks and git-based updates. */
+export const GITHUB_REPO = 'xuanyide01/dsh-unrestricted-mobile'
 
 /**
  * Services this plugin cannot work without. `settings` is deliberately absent:
@@ -48,6 +57,11 @@ export const name = 'dsh-unrestricted'
 export const inject = ['systemPrompt', 'loader']
 
 const RPC_CHANNEL = '/dsh-unrestricted'
+const RELEASE_API_URL = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`
+const RAW_PACKAGE_URL = `https://raw.githubusercontent.com/${GITHUB_REPO}/master/package.json`
+const JSDELIVR_PACKAGE_URL = `https://cdn.jsdelivr.net/gh/${GITHUB_REPO}@master/package.json`
+const UPDATE_CHECK_TIMEOUT_MS = 10_000
+const PNPM_TIMEOUT_MS = 120_000
 
 // The engine's schemastery when reachable, a shape-compatible subset otherwise
 // (see deps.js). Either way `config.get()` and the settings form keep working.
@@ -60,7 +74,7 @@ export const Config = schema.object({
   }),
 }).default({ enabled: false }).volatile()
 
-/** Human-readable error text for status and RPC error branches. */
+/** Human-readable error text for diagnostics and RPC error branches. */
 function messageOf(error) {
   return error instanceof Error ? error.message : String(error)
 }
@@ -72,10 +86,9 @@ function ok(value) {
 
 /**
  * Read `enabled` from a Cordis config handle, a plain object, or nothing.
- *
  * In the engine the second `apply` argument is the Schemastery-validated value
- * (`.get()`); a host that mounts the plugin without a schema — the plugin kit's
- * fake host, a minimal composition — passes the raw object instead.
+ * (`.get()`); a host that mounts the plugin without a schema passes the raw
+ * object instead.
  * @param {unknown} config - whatever the host handed us.
  * @returns {boolean} the toggle, defaulting to off.
  */
@@ -88,9 +101,59 @@ function readEnabled(config) {
   }
 }
 
+/** Read and parse a JSON file, returning undefined when absent or unreadable. */
+async function readJsonFile(filePath) {
+  try {
+    const raw = await fs.readFile(filePath, 'utf8')
+    return JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+}
+
+/** Run pnpm inside a profile directory using Desktop's bundled runtime or system pnpm. */
+function runPnpm(profileDir, args, packageManager) {
+  const command = packageManager?.command ?? (process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm')
+  const fullArgs = [
+    ...(packageManager?.argsPrefix ?? []),
+    '--dir',
+    profileDir,
+    '--config.confirmModulesPurge=false',
+    ...args,
+  ]
+  const env = packageManager?.env !== undefined
+    ? { ...process.env, ...packageManager.env }
+    : process.env
+  const useShell = packageManager?.command === undefined && process.platform === 'win32'
+  return new Promise((resolve, reject) => {
+    execFile(
+      command,
+      fullArgs,
+      {
+        cwd: profileDir,
+        env,
+        shell: useShell,
+        windowsHide: true,
+        timeout: PNPM_TIMEOUT_MS,
+        maxBuffer: 8 * 1024 * 1024,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          const detail = [stderr, stdout, error.message]
+            .map(part => String(part ?? '').trim())
+            .find(part => part.length > 0) ?? 'pnpm exited with an error'
+          reject(new Error(detail))
+          return
+        }
+        resolve({ stdout, stderr })
+      },
+    )
+  })
+}
+
 /**
- * @param ctx - plugin context carrying systemPrompt and loader, plus optional
- *   settings / agentPresets / connection / dshGo services.
+ * @param ctx - plugin context carrying settings, systemPrompt, loader, and
+ *   optional agentPresets / connection / profileContext services.
  */
 export function apply(ctx, config = {}) {
   // The settings mirror exists only for the web settings card; a host without
@@ -101,57 +164,36 @@ export function apply(ctx, config = {}) {
 
   const state = {
     enabled: readEnabled(config),
-    /** presetId -> issue strings; a preset with an empty list is verified. */
-    startup: new Map(),
-    /** presetId -> in-flight startup check. */
-    checking: new Map(),
-    /** presetId -> issue strings observed on live assemblies. */
+    /** presetId -> issue codes observed on live assemblies. */
     runtime: new Map(),
     /** Agent -> section disposer for minimal persona shadows. */
     shadows: new Map(),
-    /** 已由调用方在 agent scope 注册 persona 的 Minimal agent。 */
+    /** Minimal agents whose persona was already registered at agent scope by caller. */
     customMinimal: new WeakSet(),
-    /** Fused minimal prompt, computed only after the minimal anchors verify. */
-    fusedMinimal: null,
+    /** Precomputed fused minimal prompt. */
+    fusedMinimal: fusedMinimalPrompt(),
     /** presetId -> last successfully fused top-level live assembly (the deploy preview). */
     fusedText: new Map(),
+    /** Latest update status snapshot. */
+    update: {
+      state: 'idle',
+      currentVersion: PLUGIN_VERSION,
+      restartRequired: false,
+    },
+    /** In-flight update check promise. */
+    checkingUpdate: null,
+    /** In-flight update installation promise. */
+    performingUpdate: null,
     /** Listeners for the native (dsh-go) surfaces: status changed. */
     listeners: new Set(),
   }
 
-  /** Wake every native surface so it re-reads the status snapshot. */
-  function notify() {
-    for (const listener of state.listeners) {
-      try {
-        listener()
-      } catch {
-        // A surface that cannot repaint must not break the toggle lifecycle.
-      }
-    }
-  }
-
-  /**
-   * Subscribe a native surface to status changes.
-   * @param {() => void} listener - called after a toggle, check, or recheck.
-   * @returns {() => void} unsubscribe.
-   */
-  function subscribe(listener) {
-    state.listeners.add(listener)
-    return () => state.listeners.delete(listener)
-  }
-
-  /** All known issues for one preset (startup check + live observations). */
-  function modeIssues(presetId) {
-    return [...state.startup.get(presetId) ?? [], ...state.runtime.get(presetId) ?? []]
-  }
-
   /**
    * Read the standing assembly of a preset using the registry's scope lease
-   * (or a temporary mounted scope on pre-0.2.2 registries). In rosterless
-   * profiles, assemble the global host layer directly.
+   * (DSH >= 0.2.1) or scope helper fallback (DSH 0.2.0-rc.2).
+   * In rosterless profiles, assemble the global host layer directly.
    */
   async function presetAssembly(presetId) {
-    // 预设声明与本插件是并列 Loader 条目；服务可用时，声明仍可能尚未注册。
     await ctx.loader.await()
     const presets = ctx.get('agentPresets')
     if (presets === undefined) {
@@ -186,55 +228,6 @@ export function apply(ctx, config = {}) {
   }
 
   /**
-   * Run the standing-scope anchor check for ONE preset (lazy per-preset, so a
-   * minimal toggle never waits on the other three mounts). Idempotent per
-   * preset until `recheck` clears it.
-   */
-  function ensureCheck(presetId) {
-    let pending = state.checking.get(presetId)
-    if (pending !== undefined) return pending
-    pending = (async () => {
-      const issues = []
-      try {
-        await ctx.loader.await()
-        const presets = ctx.get('agentPresets')
-        if (presets === undefined) {
-          // Rosterless profile (e.g. headless / sdk): live assembly checks the
-          // host sections directly.
-          state.startup.set(presetId, issues)
-          return
-        }
-        const assembly = await presetAssembly(presetId)
-        const fused = fuseSections(assembly.sections, presetId)
-        if (fused.issues !== undefined) issues.push(...fused.issues)
-      } catch (error) {
-        issues.push(`preset probe failed: ${messageOf(error)}`)
-      }
-      state.startup.set(presetId, issues)
-      if (presetId === 'minimal') {
-        state.fusedMinimal = issues.length === 0 ? fusedMinimalPrompt() : null
-      }
-      notify()
-    })().catch((error) => {
-      state.startup.set(presetId, [`preset probe failed: ${messageOf(error)}`])
-      if (presetId === 'minimal') state.fusedMinimal = null
-      notify()
-    })
-    state.checking.set(presetId, pending)
-    return pending
-  }
-
-  /** Check every preset once (status surface and the `recheck` endpoint). */
-  function ensureChecks() {
-    return Promise.all(PRESETS.map(presetId => ensureCheck(presetId)))
-  }
-
-  /** Whether one preset may currently be fused. */
-  function usable(presetId) {
-    return PRESETS.includes(presetId) && modeIssues(presetId).length === 0
-  }
-
-  /**
    * Remove a minimal persona shadow from an agent when it switches preset, is
    * disposed, or unrestricted mode turns off.
    */
@@ -255,7 +248,7 @@ export function apply(ctx, config = {}) {
       try {
         return presets.composedPreset(agent.ctx)
       } catch {
-        return undefined // scope chain not readable; leave the agent untouched
+        return undefined
       }
     }
     if (sections !== undefined) {
@@ -270,10 +263,9 @@ export function apply(ctx, config = {}) {
    * Synchronize a minimal agent's complete persona shadow with its current
    * preset and toggle state. If the agent is no longer on `minimal`, any stale
    * shadow from an earlier blank-session preset selection is disposed.
-   * @param agent - the target agent.
    */
   function syncMinimalShadow(agent) {
-    if (!state.enabled || state.fusedMinimal === null) {
+    if (!state.enabled) {
       unshadowMinimal(agent)
       return
     }
@@ -290,17 +282,15 @@ export function apply(ctx, config = {}) {
         order: 0,
         complete: true,
         text: (context) => {
-          // 结构化工具注册在子代理 scope，不能只查询全局工具目录。
           const hasStructured = context?.agent?.ctx?.tools
             ?.schemas?.(context.agent)
             ?.some(tool => tool.name === 'structured_output') === true
           return hasStructured
             ? fusedMinimalPrompt(ANCHORS.structuredOutputFull)
-            : (state.fusedMinimal ?? fusedMinimalPrompt())
+            : state.fusedMinimal
         },
       })
     } catch (error) {
-      // 原生委派角色已占用同一名称；保留调用方贡献，在组装时融合。
       if (messageOf(error) !== 'prompt section "deployment:persona-prefix" is already registered in this scope') throw error
       state.customMinimal.add(agent)
       return
@@ -322,40 +312,422 @@ export function apply(ctx, config = {}) {
     state.shadows.clear()
   }
 
+  /** Wake every native surface so it re-reads the status snapshot. */
+  function notify() {
+    for (const listener of state.listeners) {
+      try {
+        listener()
+      } catch {
+        // A surface that cannot repaint must not break the toggle lifecycle.
+      }
+    }
+  }
+
+  /**
+   * Subscribe a native surface to status changes.
+   * @param {() => void} listener - called after a toggle, check, or recheck.
+   * @returns {() => void} unsubscribe.
+   */
+  function subscribe(listener) {
+    state.listeners.add(listener)
+    return () => state.listeners.delete(listener)
+  }
+
   function onEnable() {
-    void ensureChecks() // fills the status surface in the background
-    // The sweep only needs minimal's own check — don't gate it on the rest.
-    void ensureCheck('minimal').then(() => {
-      sweepAgents()
-      notify()
+    state.runtime.clear()
+    sweepAgents()
+    void ctx.loader.await().then(() => {
+      if (state.enabled) sweepAgents()
     })
     notify()
   }
 
   function onDisable() {
     clearShadows()
+    state.runtime.clear()
     state.fusedText.clear()
     notify()
   }
 
-  /** Current card view: toggle and per-preset state. */
+  /** Inspect how `dsh-unrestricted` is installed in the active profile. */
+  async function inspectProfileInstall() {
+    const profileContext = ctx.get('profileContext')
+    const profileDir = profileContext?.dir
+    if (typeof profileDir !== 'string' || profileDir === '') {
+      return {
+        profileDir: undefined,
+        profileName: undefined,
+        packageManager: undefined,
+        installSource: 'unknown',
+        dependencySpec: undefined,
+        localSourceDir: undefined,
+      }
+    }
+    const pkg = await readJsonFile(path.join(profileDir, 'package.json'))
+    const spec = pkg?.dependencies?.[name]
+    if (typeof spec !== 'string' || spec === '') {
+      return {
+        profileDir,
+        profileName: profileContext?.name,
+        packageManager: profileContext?.packageManager,
+        installSource: 'unknown',
+        dependencySpec: undefined,
+        localSourceDir: undefined,
+      }
+    }
+    if (spec.startsWith('file:') || spec.startsWith('link:')) {
+      const prefix = spec.startsWith('file:') ? 'file:' : 'link:'
+      const rawTarget = spec.slice(prefix.length)
+      const localSourceDir = path.isAbsolute(rawTarget)
+        ? rawTarget
+        : path.resolve(profileDir, rawTarget)
+      return {
+        profileDir,
+        profileName: profileContext?.name,
+        packageManager: profileContext?.packageManager,
+        installSource: 'file',
+        dependencySpec: spec,
+        localSourceDir,
+      }
+    }
+    if (spec.startsWith('github:') || spec.includes('github.com')) {
+      return {
+        profileDir,
+        profileName: profileContext?.name,
+        packageManager: profileContext?.packageManager,
+        installSource: 'github',
+        dependencySpec: spec,
+        localSourceDir: undefined,
+      }
+    }
+    return {
+      profileDir,
+      profileName: profileContext?.name,
+      packageManager: profileContext?.packageManager,
+      installSource: 'registry',
+      dependencySpec: spec,
+      localSourceDir: undefined,
+    }
+  }
+
+  /** Query GitHub Releases (with raw/jsDelivr fallback) for the latest published version. */
+  async function fetchRemoteRelease() {
+    const headers = {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'dsh-unrestricted',
+    }
+    let lastError
+    try {
+      const response = await fetch(RELEASE_API_URL, {
+        headers,
+        signal: AbortSignal.timeout(UPDATE_CHECK_TIMEOUT_MS),
+      })
+      if (response.ok) {
+        const data = await response.json()
+        const version = normalizeVersion(data?.tag_name ?? data?.name)
+        if (version !== undefined) {
+          return {
+            latestVersion: version,
+            latestTag: typeof data.tag_name === 'string' && data.tag_name.trim() !== ''
+              ? data.tag_name.trim()
+              : `v${version}`,
+            releaseUrl: typeof data.html_url === 'string' && data.html_url.trim() !== ''
+              ? data.html_url.trim()
+              : `https://github.com/${GITHUB_REPO}/releases/tag/v${version}`,
+            publishedAt: typeof data.published_at === 'string' ? data.published_at : undefined,
+          }
+        }
+      } else {
+        lastError = new Error(`HTTP ${response.status}`)
+      }
+    } catch (error) {
+      lastError = error
+    }
+
+    for (const fallbackUrl of [RAW_PACKAGE_URL, JSDELIVR_PACKAGE_URL]) {
+      try {
+        const response = await fetch(fallbackUrl, {
+          headers: { Accept: 'application/json', 'User-Agent': 'dsh-unrestricted' },
+          signal: AbortSignal.timeout(UPDATE_CHECK_TIMEOUT_MS),
+        })
+        if (!response.ok) {
+          lastError = new Error(`HTTP ${response.status}`)
+          continue
+        }
+        const pkg = await response.json()
+        const version = normalizeVersion(pkg?.version)
+        if (version !== undefined) {
+          return {
+            latestVersion: version,
+            latestTag: `v${version}`,
+            releaseUrl: `https://github.com/${GITHUB_REPO}/releases/tag/v${version}`,
+            publishedAt: undefined,
+          }
+        }
+      } catch (error) {
+        lastError = error
+      }
+    }
+
+    throw lastError ?? new Error('Unable to reach GitHub release metadata')
+  }
+
+  /** Check whether a newer version is available from GitHub or the linked local directory. */
+  async function checkUpdate({ force = false } = {}) {
+    if (!force && state.checkingUpdate !== null) {
+      return await state.checkingUpdate
+    }
+    const task = (async () => {
+      const install = await inspectProfileInstall()
+      let localVersion
+      if (install.installSource === 'file' && install.localSourceDir !== undefined) {
+        const localPkg = await readJsonFile(path.join(install.localSourceDir, 'package.json'))
+        localVersion = normalizeVersion(localPkg?.version)
+      }
+
+      let remote = null
+      let remoteError = null
+      try {
+        remote = await fetchRemoteRelease()
+      } catch (error) {
+        remoteError = error
+      }
+
+      if (remote === null && localVersion === undefined) {
+        state.update = {
+          ...state.update,
+          state: 'failed',
+          currentVersion: PLUGIN_VERSION,
+          installSource: install.installSource,
+          dependencySpec: install.dependencySpec,
+          checkedAt: new Date().toISOString(),
+          errorCode: 'update-check-failed',
+          errorDetail: messageOf(remoteError),
+        }
+        return state.update
+      }
+
+      let latestVersion = remote?.latestVersion ?? localVersion
+      let latestTag = remote?.latestTag ?? `v${latestVersion}`
+      if (localVersion !== undefined && (latestVersion === undefined || compareSemver(localVersion, latestVersion) > 0)) {
+        latestVersion = localVersion
+        latestTag = `v${localVersion}`
+      }
+
+      const baselineVersion = state.update.restartRequired && state.update.updatedVersion !== undefined
+        ? state.update.updatedVersion
+        : PLUGIN_VERSION
+      const hasNewer = compareSemver(latestVersion, baselineVersion) > 0
+
+      state.update = {
+        state: hasNewer
+          ? 'available'
+          : state.update.restartRequired
+            ? 'updated'
+            : 'up-to-date',
+        currentVersion: PLUGIN_VERSION,
+        latestVersion,
+        latestTag,
+        releaseUrl: remote?.releaseUrl ?? `https://github.com/${GITHUB_REPO}/releases`,
+        publishedAt: remote?.publishedAt,
+        checkedAt: new Date().toISOString(),
+        installSource: install.installSource,
+        dependencySpec: install.dependencySpec,
+        restartRequired: Boolean(state.update.restartRequired),
+        updatedVersion: state.update.updatedVersion,
+      }
+      notify()
+      return state.update
+    })()
+
+    state.checkingUpdate = task
+    try {
+      return await task
+    } finally {
+      if (state.checkingUpdate === task) {
+        state.checkingUpdate = null
+      }
+    }
+  }
+
+  /** Install the latest version into the active profile and mark restartRequired. */
+  async function performUpdate({ targetTag } = {}) {
+    if (state.performingUpdate !== null) {
+      return await state.performingUpdate
+    }
+    const task = (async () => {
+      const install = await inspectProfileInstall()
+      if (install.profileDir === undefined) {
+        state.update = {
+          ...state.update,
+          state: 'failed',
+          currentVersion: PLUGIN_VERSION,
+          errorCode: 'update-no-profile',
+        }
+        return state.update
+      }
+
+      if (state.update.latestVersion === undefined && targetTag === undefined) {
+        await checkUpdate({ force: true })
+      }
+
+      let targetSpec
+      let expectedVersion = state.update.latestVersion
+
+      if (install.installSource === 'file' && install.localSourceDir !== undefined) {
+        const localPkg = await readJsonFile(path.join(install.localSourceDir, 'package.json'))
+        const localVersion = normalizeVersion(localPkg?.version)
+        if (localVersion === undefined) {
+          state.update = {
+            ...state.update,
+            state: 'failed',
+            currentVersion: PLUGIN_VERSION,
+            installSource: install.installSource,
+            dependencySpec: install.dependencySpec,
+            errorCode: 'update-install-failed',
+            errorDetail: `Cannot read package.json in ${install.localSourceDir}`,
+          }
+          return state.update
+        }
+        if (expectedVersion !== undefined && compareSemver(localVersion, expectedVersion) < 0) {
+          state.update = {
+            ...state.update,
+            state: 'failed',
+            currentVersion: PLUGIN_VERSION,
+            installSource: install.installSource,
+            dependencySpec: install.dependencySpec,
+            errorCode: 'update-file-source-outdated',
+            errorDetail: `${localVersion} < ${expectedVersion}`,
+          }
+          return state.update
+        }
+        targetSpec = install.dependencySpec
+        expectedVersion = localVersion
+      } else {
+        const resolvedTag = typeof targetTag === 'string' && targetTag.trim() !== ''
+          ? targetTag.trim()
+          : (state.update.latestTag ?? (expectedVersion !== undefined ? `v${expectedVersion}` : 'master'))
+        targetSpec = `github:${GITHUB_REPO}#${resolvedTag}`
+        expectedVersion = normalizeVersion(resolvedTag) ?? expectedVersion ?? PLUGIN_VERSION
+      }
+
+      const pkgPath = path.join(install.profileDir, 'package.json')
+      const lockPath = path.join(install.profileDir, 'pnpm-lock.yaml')
+      const backupPkg = await fs.readFile(pkgPath, 'utf8').catch(() => undefined)
+      const backupLock = await fs.readFile(lockPath, 'utf8').catch(() => undefined)
+      const parsedBefore = backupPkg !== undefined ? JSON.parse(backupPkg) : undefined
+      const originalDsh = parsedBefore?.dsh
+
+      try {
+        await runPnpm(install.profileDir, ['add', targetSpec], install.packageManager)
+
+        // Ensure file: installs refresh cached store copies when needed.
+        const installedPkgPath = path.join(install.profileDir, 'node_modules', name, 'package.json')
+        let installedPkg = await readJsonFile(installedPkgPath)
+        let installedVersion = normalizeVersion(installedPkg?.version)
+        if (
+          install.installSource === 'file'
+          && expectedVersion !== undefined
+          && installedVersion !== expectedVersion
+        ) {
+          await runPnpm(install.profileDir, ['remove', name], install.packageManager)
+          await runPnpm(install.profileDir, ['add', targetSpec], install.packageManager)
+          installedPkg = await readJsonFile(installedPkgPath)
+          installedVersion = normalizeVersion(installedPkg?.version)
+        }
+
+        // Preserve dsh.profile.bundles in package.json after pnpm mutations.
+        const afterPkg = await readJsonFile(pkgPath)
+        if (afterPkg !== undefined) {
+          const dshBlock = afterPkg.dsh ?? originalDsh ?? {}
+          const profileBlock = dshBlock.profile ?? originalDsh?.profile ?? {}
+          const bundles = Array.isArray(profileBlock.bundles)
+            ? [...profileBlock.bundles]
+            : Array.isArray(originalDsh?.profile?.bundles)
+              ? [...originalDsh.profile.bundles]
+              : []
+          if (!bundles.includes(name)) bundles.push(name)
+          afterPkg.dsh = {
+            ...originalDsh,
+            ...dshBlock,
+            profile: {
+              ...originalDsh?.profile,
+              ...profileBlock,
+              bundles,
+            },
+          }
+          await fs.writeFile(pkgPath, `${JSON.stringify(afterPkg, null, 2)}\n`, 'utf8')
+        }
+
+        const finalVersion = installedVersion ?? expectedVersion ?? PLUGIN_VERSION
+        state.update = {
+          ...state.update,
+          state: 'updated',
+          currentVersion: PLUGIN_VERSION,
+          latestVersion: finalVersion,
+          latestTag: `v${finalVersion}`,
+          updatedVersion: finalVersion,
+          installSource: install.installSource,
+          dependencySpec: targetSpec,
+          checkedAt: new Date().toISOString(),
+          restartRequired: true,
+          errorCode: undefined,
+          errorDetail: undefined,
+        }
+        return state.update
+      } catch (error) {
+        if (backupPkg !== undefined) {
+          await fs.writeFile(pkgPath, backupPkg, 'utf8').catch(() => {})
+        }
+        if (backupLock !== undefined) {
+          await fs.writeFile(lockPath, backupLock, 'utf8').catch(() => {})
+        }
+        state.update = {
+          ...state.update,
+          state: 'failed',
+          currentVersion: PLUGIN_VERSION,
+          installSource: install.installSource,
+          dependencySpec: install.dependencySpec,
+          errorCode: 'update-install-failed',
+          errorDetail: messageOf(error),
+        }
+        return state.update
+      } finally {
+        notify()
+      }
+    })()
+
+    state.performingUpdate = task
+    try {
+      return await task
+    } finally {
+      if (state.performingUpdate === task) {
+        state.performingUpdate = null
+      }
+    }
+  }
+
+  /** Current card view: toggle, version, per-preset state, and update state. */
   function statusPayload() {
     const modes = {}
     for (const presetId of PRESETS) {
-      const issues = modeIssues(presetId)
+      const issues = state.runtime.get(presetId) ?? []
       modes[presetId] = {
         state: !state.enabled
           ? 'off'
-          : !state.startup.has(presetId)
-            ? 'checking'
-            : issues.length > 0 ? 'failed' : 'active',
+          : issues.length > 0 ? 'failed' : 'active',
         issues,
       }
     }
-    return { enabled: state.enabled, contract: contractFingerprint(), modes }
+    return {
+      enabled: state.enabled,
+      version: PLUGIN_VERSION,
+      modes,
+      update: state.update,
+    }
   }
 
-  /** One line-count/byte summary so the preview does not ship a whole prompt. */
+  /** One line-count/byte summary so the preview reports size metadata. */
   function summarize(text) {
     return {
       text,
@@ -365,12 +737,9 @@ export function apply(ctx, config = {}) {
   }
 
   /**
-   * Variables to bind in a standing-scope preview. The standing scope carries
-   * no agent, so its `{{model}}` / `{{cwd}}` providers resolve to nothing; when
-   * a live agent exists, borrow its route and working directory so the card
-   * reads a realistic prompt instead of raw slots. Absent any agent the slots
-   * stay literal, which the card renders as-is.
-   * @returns partial variable overrides for the preview assembly.
+   * Variables to bind in a standing-scope preview. When a live agent exists,
+   * borrow its route and working directory so the card reads a realistic
+   * prompt instead of raw slots.
    */
   function previewVariables() {
     const variables = {}
@@ -390,24 +759,20 @@ export function apply(ctx, config = {}) {
 
   /**
    * Build the deploy preview for ONE preset from the same assembly path the
-   * live fusion uses. This is the "look before you switch" surface: exact
-   * fused prompt text, its size, and the contract fingerprint it embeds.
-   * Read-only — it never mutates prompt state.
-   * @param presetId - preset id from the card.
-   * @returns the preview payload, or a message naming why none is available.
+   * live fusion uses. Read-only — never mutates prompt state.
    */
   async function previewFor(presetId) {
-    const contract = contractFingerprint()
     if (!PRESETS.includes(presetId)) {
-      return { presetId, contract, available: false, reason: `unknown preset "${presetId}"` }
+      return {
+        presetId,
+        available: false,
+        errorCode: 'unsupported-preset',
+        reason: `unknown preset "${presetId}"`,
+      }
     }
-    // Best source first: the exact bytes a top-level live agent just received.
-    // Only when no top-level agent has assembled this preset yet does the
-    // preview fall back to the standing scope, which carries no agent-bound
-    // sections and leaves {{model}} / {{cwd}} as literal slots.
     const cached = state.fusedText.get(presetId)
     if (cached !== undefined) {
-      return { presetId, contract, available: true, source: 'live', ...summarize(cached) }
+      return { presetId, available: true, source: 'live', ...summarize(cached) }
     }
     try {
       const assembly = await presetAssembly(presetId)
@@ -415,34 +780,37 @@ export function apply(ctx, config = {}) {
         ? { sections: [{ name: 'deployment:persona-prefix', text: fusedMinimalPrompt() }] }
         : fuseSections(assembly.sections, presetId)
       if (fused.issues !== undefined) {
-        return { presetId, contract, available: false, reason: fused.issues.join('; ') }
+        return {
+          presetId,
+          available: false,
+          errorCode: 'missing-persona',
+          reason: fused.issues.join('; '),
+        }
       }
       const variables = { ...assembly.variables, ...previewVariables() }
       if (renderPrompt === undefined) {
         // Fusion itself needs no renderer; only this preview text does.
-        return { presetId, contract, available: false, reason: 'preview needs @deepseek-ai/dsh-system-prompt, which this host does not expose' }
+        return {
+          presetId,
+          available: false,
+          errorCode: 'preview-failed',
+          reason: 'preview needs @deepseek-ai/dsh-system-prompt, which this host does not expose',
+        }
       }
       const text = renderPreview({ ...assembly, sections: fused.sections, variables }, renderPrompt)
-      return { presetId, contract, available: true, source: 'standing', ...summarize(text) }
+      return { presetId, available: true, source: 'standing', ...summarize(text) }
     } catch (error) {
-      return { presetId, contract, available: false, reason: `preview probe failed: ${messageOf(error)}` }
+      return {
+        presetId,
+        available: false,
+        errorCode: 'preview-failed',
+        reason: messageOf(error),
+      }
     }
   }
 
-  /** Re-run every anchor check from scratch (card endpoint and native panel). */
-  async function recheckAll() {
-    state.checking.clear()
-    state.startup.clear()
-    state.runtime.clear()
-    state.fusedText.clear()
-    await ensureChecks()
-    if (state.enabled) sweepAgents()
-    notify()
-    return statusPayload()
-  }
-
   /**
-   * Locate this plugin's own loader entry, so the native panel can write the
+   * Locate this plugin's own loader entry, so the native surfaces can write the
    * same `enabled` value the settings page writes.
    * @returns {import('@deepseek-ai/cordis-plugin-loader').Entry | undefined}
    */
@@ -483,25 +851,45 @@ export function apply(ctx, config = {}) {
     return true
   }
 
+  /** Re-run the live status from scratch (native panel and RPC `recheck`). */
+  async function recheckAll() {
+    state.runtime.clear()
+    state.fusedText.clear()
+    if (state.enabled) sweepAgents()
+    notify()
+    return statusPayload()
+  }
+
   /** RPC endpoint handler for the settings card. */
   async function handleRpc(endpoint, payload) {
     switch (endpoint) {
       case 'status': {
-        if (state.enabled) await ensureChecks()
         return ok(statusPayload())
       }
       case 'preview': {
-        // Private channels forward the client payload verbatim; accept the
-        // `{ args }` envelope too so this handler survives a caller that
-        // follows the gateway convention.
         const presetId = payload?.presetId ?? payload?.args?.presetId
         return ok(await previewFor(presetId))
       }
       case 'recheck': {
         return ok(await recheckAll())
       }
+      case 'check-update': {
+        const force = Boolean(payload?.force ?? payload?.args?.force)
+        return ok(await checkUpdate({ force }))
+      }
+      case 'perform-update': {
+        const targetTag = payload?.targetTag ?? payload?.args?.targetTag
+        return ok(await performUpdate({ targetTag }))
+      }
       default:
-        return { ok: false, error: { code: 'internal', message: `dsh-unrestricted: unknown endpoint ${JSON.stringify(endpoint)}`, details: {} } }
+        return {
+          ok: false,
+          error: {
+            code: 'internal',
+            message: `dsh-unrestricted: unknown endpoint ${JSON.stringify(endpoint)}`,
+            details: {},
+          },
+        }
     }
   }
 
@@ -516,49 +904,37 @@ export function apply(ctx, config = {}) {
       return original
     }
     if (presetId === 'minimal') {
-      // If the minimal shadow is already installed on this agent, `assemble()`
-      // will restore the complete persona right after the waterfall returns;
-      // record the live preview text and let it finish.
-      if (state.shadows.has(agent) && state.fusedMinimal !== null) {
+      if (state.shadows.has(agent)) {
         state.fusedText.set('minimal', state.fusedMinimal)
         return original
       }
-      // An agent missed by the enable sweep (a request that raced the toggle)
-      // registers its shadow now for subsequent assemblies, and also returns
-      // the fused minimal section for this assembly when possible.
-      await ensureCheck('minimal')
       syncMinimalShadow(agent)
-      if (state.customMinimal.has(agent) && usable('minimal')) {
+      if (state.customMinimal.has(agent)) {
         const fused = fuseSections(original.sections, 'minimal', { isSubagent: true })
         if (fused.issues !== undefined) {
           state.runtime.set('minimal', fused.issues)
           return original
         }
+        state.runtime.delete('minimal')
         return { ...original, sections: fused.sections }
       }
       return original
     }
-    // If this blank session was previously `minimal` and switched to another
-    // preset before its first turn, drop the stale minimal shadow now so it
-    // cannot overwrite the new preset's sections after the waterfall.
     if (state.shadows.has(agent)) {
       unshadowMinimal(agent)
     }
-    if (!usable(presetId)) return original
     const isSubagent = original.contexts.some(entry => entry.name === 'subagent:delegation')
     const fused = fuseSections(original.sections, presetId, { isSubagent })
     if (fused.issues !== undefined) {
       state.runtime.set(presetId, fused.issues)
       return original
     }
-    // Keep the deployed top-level fusion available for the card's preview.
-    // Subagents may carry custom personas or restricted sections, so they do
-    // not overwrite the preset's top-level preview cache.
-    if (!isSubagent && renderPrompt !== undefined) {
+    state.runtime.delete(presetId)
+    if (!isSubagent) {
       try {
         state.fusedText.set(presetId, renderPreview({ ...original, sections: fused.sections }, renderPrompt))
       } catch {
-        state.fusedText.delete(presetId) // an unresolvable variable only costs the preview
+        state.fusedText.delete(presetId)
       }
     }
     return { ...original, sections: fused.sections }
@@ -566,8 +942,7 @@ export function apply(ctx, config = {}) {
 
   ctx.on('agent/created', ({ agent }) => {
     if (!state.enabled) return
-    // Only minimal's own check gates the shadow — never the other presets'.
-    void ensureCheck('minimal').then(() => syncMinimalShadow(agent))
+    syncMinimalShadow(agent)
   })
 
   ctx.on('agent-preset/selected', (sessionId) => {
@@ -578,7 +953,7 @@ export function apply(ctx, config = {}) {
       unshadowMinimal(agent)
       return
     }
-    void ensureCheck('minimal').then(() => syncMinimalShadow(agent))
+    syncMinimalShadow(agent)
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
@@ -602,7 +977,7 @@ export function apply(ctx, config = {}) {
     }
   }, 'dsh-unrestricted: toggle lifecycle')
 
-  // Web 状态通道由官方 Connection 认证；headless 组合无需提供 connection 服务。
+  // Web/Desktop 状态通道由官方 Connection 认证；headless 组合无需提供 connection 服务。
   ctx.inject(['connection'], (connectionCtx) => {
     const disposeRpc = connectionCtx.connection.rpc.handle(RPC_CHANNEL, handleRpc)
     return async () => {
@@ -610,12 +985,13 @@ export function apply(ctx, config = {}) {
     }
   })
 
-  // DSH Go（Android）原生界面：状态条 + 面板 + 面板里的开关。只在带 dsh-go
-  // 桥接的主机生效，桌面网页版与 headless 完全不受影响。
+  // DSH Go（Android）原生界面：胶囊 + 状态条 + 面板。只在带 dsh-go 桥接的
+  // 主机生效，桌面网页版与 headless 完全不受影响。
   installMobile(ctx, {
     getSnapshot: statusPayload,
     subscribe,
     setEnabled,
     recheck: recheckAll,
+    checkUpdate,
   })
 }

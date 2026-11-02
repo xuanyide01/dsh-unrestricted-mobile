@@ -1,6 +1,6 @@
 # 装到 DSH Go（安卓）
 
-本包 `dsh-unrestricted 0.2.6-mobile.4` 同时带两套界面：
+本包 `dsh-unrestricted 0.2.6-mobile.5` 同时带两套界面：
 
 | 在哪 | 界面 | 开关在哪 |
 |---|---|---|
@@ -29,12 +29,12 @@ mkdir -p /root/.dsh/dsh-go/plugins
 cd /root/.dsh/dsh-go/plugins
 # 有网：直接拉仓库
 git clone --depth 1 https://github.com/yexi-by/dsh-unrestricted.git
-cd dsh-unrestricted && git checkout v0.2.6-mobile.4
+cd dsh-unrestricted && git checkout v0.2.6-mobile.5
 ```
 
 **B. 从手机存储拷（离线推荐）**
 
-1. 把 `dsh-unrestricted` 整个目录（或 `dsh-unrestricted-0.2.6-mobile.4.tgz`）放到手机「下载」。
+1. 把 `dsh-unrestricted` 整个目录（或 `dsh-unrestricted-0.2.6-mobile.5.tgz`）放到手机「下载」。
 2. 设置里打开「访问手机文件」。
 3. App 终端：
 
@@ -42,7 +42,7 @@ cd dsh-unrestricted && git checkout v0.2.6-mobile.4
 mkdir -p /root/.dsh/dsh-go/plugins
 cp -r /sdcard/Download/dsh-unrestricted /root/.dsh/dsh-go/plugins/
 # 或者用 tgz
-tar xzf /sdcard/Download/dsh-unrestricted-0.2.6-mobile.4.tgz -C /root/.dsh/dsh-go/plugins/
+tar xzf /sdcard/Download/dsh-unrestricted-0.2.6-mobile.5.tgz -C /root/.dsh/dsh-go/plugins/
 ```
 
 **C. 用 adb（开发机）**
@@ -108,7 +108,7 @@ rm -rf /root/.dsh/dsh-go/plugins/dsh-unrestricted
 
 **插件详情页显示「尚未就绪 · 0/1 个组件运行中」「未运行」？**
 
-手机上的 `dsh plugin add` 是 **link 安装**：插件目录留在 `/root/.dsh/dsh-go/plugins/`，profile 里只有一个链接。从 `0.2.6-mobile.4` 起插件不再硬 import 引擎包（`src/deps.js` 自己按安装锚点找），所以这一层不再需要额外链接。
+手机上的 `dsh plugin add` 是 **link 安装**：插件目录留在 `/root/.dsh/dsh-go/plugins/`，profile 里只有一个链接。从 `0.2.6-mobile.5` 起插件不再硬 import 引擎包（`src/deps.js` 自己按安装锚点找），所以这一层不再需要额外链接。
 
 先跑诊断（只读，输出可直接复制）：
 

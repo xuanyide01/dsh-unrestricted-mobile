@@ -9,7 +9,7 @@ DSH Go（安卓）适配分支，并依赖 [ccch1mneyyy/dsh-go](https://github.c
 `src/rules.js`、`src/node.js`、`src/client/`、`lib/client.js`、`docs/` 与
 `tests/` 中的规则文本、融合逻辑、锚点与网页设置卡片改编自
 [yexi-by/dsh-unrestricted](https://github.com/yexi-by/dsh-unrestricted)
-（`0.2.5`，MIT License）。本分支在此基础上增加了 DSH Go 的原生状态条、面板、
+（`0.2.6`，MIT License）。本分支在此基础上增加了 DSH Go 的原生状态条、面板、
 开关、安装脚本与 `0.2.1` 线兼容处理。
 
 ```text

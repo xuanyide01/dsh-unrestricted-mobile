@@ -1,5 +1,25 @@
 # 更新记录
 
+## 0.2.6-mobile.5
+
+跟随上游 `0.2.6` 与 DSH Go `1.0.9`（运行时 r15，引擎仍是 dsh `0.2.1-rc.4`、桥接 `0.4.0`）。
+上游这次是重写级更新：融合不再比对锚点原文，改为按段名注入，并新增版本更新检查。
+
+- **融合改为结构化定位**：`src/rules.js` 按 `deployment:persona-prefix` / `plan:policy` /
+  `tools:ptc-only` / `tool:structured_output` 四个段名定位并 append 一次（幂等），
+  官方提示词改措辞也不会失配；缺 persona 段的预设返回 `missing-persona` 并跳过。
+- **新增更新检查**：`checkUpdate` / `performUpdate` 走 GitHub Releases，`status` 返回
+  `version` 与 `update`；网页卡片显示版本与「有新版 / 已是最新 / 已更新」。手机端
+  检查的是本仓库 `xuanyide01/dsh-unrestricted-mobile` 的 Release，面板新增「检查更新」。
+- **手机端适配保留并跟进**：胶囊 + 状态条 + 面板照旧；面板的「规则指纹」换成
+  「插件版本 / 更新状态」；`deps.js` 零硬依赖、`ctx.inject(['settings'])`、
+  0.2.1 线 `createScope` 兜底、`readEnabled` 两种 config 形态都保留。
+- 网页卡片（`src/client/*`、`lib/client.js`）整份跟随上游 0.2.6。
+- **年龄规则继续用本地改动**：文学条目按用户说明处理角色年龄，不回落上游的
+  「一律 18+」默认值。
+- 版本区间仍是 `>=0.2.1-rc.2 <0.2.3-0`（本机引擎 0.2.1-rc.4 在范围内）。
+- 测试 60 项、`plugin-kit check --load` 全绿。
+
 ## 0.2.6-mobile.4
 
 文学创作条目去掉「角色一律按 18+ / 不作年龄判断」那套默认值，改为完全按用户说明来。
