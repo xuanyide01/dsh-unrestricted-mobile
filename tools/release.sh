@@ -30,6 +30,7 @@ say "== 2/4 生成与上游的移植补丁"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 git clone --depth 1 -q https://github.com/yexi-by/dsh-unrestricted.git "$TMP/a" || die "克隆上游失败"
+rm -rf "$TMP/a/.git"
 mkdir -p "$TMP/b"
 tar -C . --exclude=.git --exclude=dist --exclude=node_modules -cf - . | tar -C "$TMP/b" -xf -
 ( cd "$TMP" && git diff --no-index --no-color --binary --src-prefix= --dst-prefix= a b > "$OLDPWD/$DIST/dsh-unrestricted-$VERSION.patch" ) || true
