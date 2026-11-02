@@ -11,6 +11,8 @@
     "type": "git",
     "url": "https://github.com/yexi-by/dsh-unrestricted.git"
   },
+  "githubRepo": "xuanyide01/dsh-unrestricted-mobile",
+  "gitBranch": "main",
   "homepage": "https://github.com/yexi-by/dsh-unrestricted#readme",
   "bugs": {
     "url": "https://github.com/yexi-by/dsh-unrestricted/issues"

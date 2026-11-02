@@ -7,3 +7,4 @@ probe-run/
 probe-v2/
 .DS_Store
 Thumbs.db
+dist
