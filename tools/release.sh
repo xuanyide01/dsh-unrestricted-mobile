@@ -29,8 +29,14 @@ node tools/build-mobile.mjs --out "$DIST"
 say "== 2/4 生成与上游的移植补丁"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-git clone --depth 1 -q https://github.com/yexi-by/dsh-unrestricted.git "$TMP/a" || die "克隆上游失败"
-rm -rf "$TMP/a/.git"
+# UPSTREAM_DIR 可指向一份已克隆的上游（避免每次发布都联网克隆）；默认现场克隆。
+if [ -n "${UPSTREAM_DIR:-}" ] && [ -d "$UPSTREAM_DIR" ]; then
+  cp -a "$UPSTREAM_DIR" "$TMP/a"
+  rm -rf "$TMP/a/.git"
+else
+  git clone --depth 1 -q https://github.com/yexi-by/dsh-unrestricted.git "$TMP/a" || die "克隆上游失败"
+  rm -rf "$TMP/a/.git"
+fi
 mkdir -p "$TMP/b"
 tar -C . --exclude=.git --exclude=dist --exclude=node_modules -cf - . | tar -C "$TMP/b" -xf -
 ( cd "$TMP" && git diff --no-index --no-color --binary --src-prefix= --dst-prefix= a b > "$OLDPWD/$DIST/dsh-unrestricted-$VERSION.patch" ) || true
