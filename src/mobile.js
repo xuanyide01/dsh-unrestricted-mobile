@@ -104,17 +104,6 @@ export function installMobile(ctx, controller) {
             }
             return { toast: actionToast('recheck', { ok }, event?.locale), refresh: PANEL_ID }
           },
-          'check-update': (scope, event) => {
-            // The bridge gives a tap 3 s; the GitHub round trip does not fit.
-            // Start it and answer at once — the panel's update row refreshes
-            // when the check lands (notify → strip) or on the next open.
-            try {
-              void controller.checkUpdate?.({ force: true })
-            } catch {
-              return { toast: actionToast('check-update', { ok: false }, event?.locale) }
-            }
-            return { toast: actionToast('check-update', { ok: true }, event?.locale) }
-          },
         },
       })
       if (typeof panel === 'function') disposers.push(panel)

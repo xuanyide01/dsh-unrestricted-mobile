@@ -8,7 +8,7 @@ DSH Go 是 DeepSeek Harness 的安卓客户端：它把**真正的 DSH 引擎**�
 2. **界面**：手机原生界面不跑 React，网页设置卡片在原生模式下根本不会加载。改成用 dsh-go 的原生通道：
    - 输入框上方**胶囊**（`composer.actions`）：`破限` / `Unrest`，一次点按切换开关。
    - 输入框上方**状态条**（`composer.strip`）：`破限 开 · 4/4` / `破限 关` / `破限 注入异常`。
-   - **原生面板**（`panels`）：破限开关、四模式注入状态、插件版本与更新状态、重新检测、检查更新（查本仓库 Release）。
+   - **原生面板**（`panels`）：破限开关、四模式注入状态、插件版本、重新检测。
    - 胶囊、状态条、面板按钮、网页卡片写的是同一个 `enabled`。
 3. **配置表单**：`Config.enabled` 加了中英文 `description`，插件详情页的原生表单能读懂这是干什么的。
 4. **模块解析**：手机上的 `dsh plugin add` 是 link 安装，插件目录在 profile 之外，引擎包在 `/opt/dsh`。`src/deps.js` 按安装锚点找 `@deepseek-ai/schemastery` / `dsh-system-prompt`，找不到就用内置兜底（融合本身不依赖它们）。所以插件在任何组合里都能加载，不再出现「装好了但 0 个组件运行中」。

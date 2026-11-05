@@ -1,5 +1,21 @@
 # 更新记录
 
+## 0.2.7-mobile.1
+
+跟随上游 `0.2.7` 与 DSH Go `1.0.10`（运行时 r15，引擎 `dsh 0.2.1-rc.4`、桥接 `0.4.0`）。
+
+- 上游 `0.2.7` 是 `0.2.6` 的**回退式**更新：删掉了自带更新检查
+  （`PLUGIN_VERSION` / `GITHUB_REPO` / `checkUpdate` / `performUpdate` / `compareSemver` /
+  `normalizeVersion` 以及卡片里的「有新版 / 检查更新」UI），`status` 恢复为
+  `{ enabled, version, modes }`，RPC 只剩 `status` / `preview` / `recheck`。
+- 手机端随之收回：面板去掉「更新」一行和「检查更新」按钮，只保留插件版本；
+  原生胶囊、状态条、面板开关、重新检测照旧。
+- 保留手机端全部适配：`src/deps.js` 零硬依赖、`settings` 可选注入、0.2.1 线
+  `createScope` 兜底、`readEnabled` 双形态、link 安装自检。
+- **年龄规则继续用本地改动**：文学条目按用户说明处理角色年龄，不回落上游的「一律 18+」。
+- 版本区间仍 `>=0.2.1-rc.2 <0.2.3-0`；网页卡片整份跟随上游 0.2.7。
+- 测试 58 项、`plugin-kit check --load` 全绿。
+
 ## 0.2.6-mobile.5
 
 跟随上游 `0.2.6` 与 DSH Go `1.0.9`（运行时 r15，引擎仍是 dsh `0.2.1-rc.4`、桥接 `0.4.0`）。

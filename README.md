@@ -2,7 +2,7 @@
 
 DeepSeek Harness（DSH）的提示词破限插件，**在安卓客户端 DSH Go 上也能用**：桌面网页版保留原来的设置卡片，手机端额外提供原生状态条、原生面板和原生开关。
 
-- 插件版本：`0.2.6-mobile.5`
+- 插件版本：`0.2.7-mobile.1`
 - 适用引擎：DSH `>=0.2.1-rc.2 <0.2.3-0`（手机端实测 `0.2.1-rc.4`，桌面端实测 `0.2.1-rc.5`）
 - 适用客户端：DSH Go `1.0.4`（桥接 `dsh-go-bridge 0.4.0`，原生插件协议 v1）；更早的 1.0.x 也能用，只是少一个胶囊
 - 许可证：MIT
@@ -28,11 +28,9 @@ DSH 在每次请求前组装系统提示词。本插件挂在 `system-prompt/ass
 
 融合按**结构化的段名**（`deployment:persona-prefix`、`plan:policy`、`tools:ptc-only`、`tool:structured_output`）定位，不再比对官方原文字符串，所以上游提示词改写措辞也不会失配；缺少 persona 段的预设直接跳过注入并在界面上标出，不会拼出损坏的提示词。
 
-插件还会检查自己有没有新版本：面板和网页卡片显示版本号与「有新版 / 已是最新」，手机上可直接点「检查更新」（检查的是本仓库的 GitHub Release）。
-
 ## 安装
 
-发布包：[Releases · v0.2.6-mobile.5](https://github.com/xuanyide01/dsh-unrestricted-mobile/releases/latest)（dsh-unrestricted-0.2.6-mobile.5.tgz，SHA-256 见 SHA256SUMS.txt）。
+发布包：[Releases · v0.2.7-mobile.1](https://github.com/xuanyide01/dsh-unrestricted-mobile/releases/latest)（dsh-unrestricted-0.2.7-mobile.1.tgz，SHA-256 见 SHA256SUMS.txt）。
 
 ### 安卓（DSH Go）
 
@@ -40,7 +38,7 @@ DSH 在每次请求前组装系统提示词。本插件挂在 `system-prompt/ass
 
 ```sh
 rm -rf /root/.dsh/dsh-go/plugins/dsh-unrestricted
-tar xzf /sdcard/Download/dsh-unrestricted-0.2.6-mobile.5.tgz -C /root/.dsh/dsh-go/plugins/
+tar xzf /sdcard/Download/dsh-unrestricted-0.2.7-mobile.1.tgz -C /root/.dsh/dsh-go/plugins/
 sh /root/.dsh/dsh-go/plugins/dsh-unrestricted/install-mobile.sh
 ```
 
@@ -69,12 +67,12 @@ dsh plugin --profile web add /path/to/dsh-unrestricted
 |---|---|
 | 输入框上方胶囊「破限」 | 一次点按切换开关，回一条 toast |
 | 输入框上方状态条 | `破限 开 · 4/4` / `破限 关` / `破限 注入异常`（点开进面板） |
-| 对话详情 →「插件」面板 | 开关、四模式注入状态、插件版本与更新状态、重新检测、检查更新 |
+| 对话详情 →「插件」面板 | 开关、四模式注入状态、插件版本、重新检测 |
 | 插件详情页配置表单 | 「启用破限」原生开关，中英文说明 |
 
 `4/4` 表示 standard / ptc / cordis / minimal 四个预设都已注入成功；哪个预设缺少 persona 段，那个模式就不注入并在面板里标出来，其余的照常。
 
-桌面网页版仍是原来的设置卡片：版本与更新状态、四个模式的状态、提示词预览（行数/字节数），更新检查在卡片里直接完成。
+桌面网页版仍是原来的设置卡片：插件版本、四个模式的状态、提示词预览（行数/字节数）。
 
 ## 验证
 
@@ -83,7 +81,7 @@ dsh plugin --profile web add /path/to/dsh-unrestricted
 | 预设 | 原版 | 融合后 | 计划模式（原 → 融合） |
 |---|---|---|---|
 | standard | 4292 B | 14791 B | 6656 → 17504 B，计划注记 ✓ |
-| ptc | 38148 B | 49049 B | 40512 → 51762 B ✓ |
+| ptc | 38408 B | 49309 B | 40772 → 52022 B ✓ |
 | cordis | 4292 B | 14791 B | 6656 → 17504 B ✓ |
 | minimal | 46 B | 10545 B | —（complete 段整体替换） |
 

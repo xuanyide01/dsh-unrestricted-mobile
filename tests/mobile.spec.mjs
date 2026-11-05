@@ -19,7 +19,7 @@ function snapshot({ enabled = true, states = {} } = {}) {
     const state = states[id] ?? (enabled ? 'active' : 'off')
     modes[id] = { state, issues: state === 'failed' ? [`${id}: persona anchor moved`] : [] }
   }
-  return { enabled, version: '0.2.6-mobile.5', update: { state: 'idle' }, modes }
+  return { enabled, version: '0.2.7-mobile.1', modes }
 }
 
 describe('dsh-go manifest', () => {
@@ -114,10 +114,10 @@ describe('panel view', () => {
     assert.equal(list.items[0].trailing, '已注入')
   })
 
-  it('offers the opposite toggle, a re-check and an update check', () => {
+  it('offers the opposite toggle and a re-check', () => {
     const on = panelView(snapshot(), 'zh').children.at(-1)
     assert.equal(on.type, 'actions')
-    assert.deepEqual(on.items.map(item => item.action), ['toggle', 'recheck', 'check-update'])
+    assert.deepEqual(on.items.map(item => item.action), ['toggle', 'recheck'])
     assert.equal(on.items[0].label, '关闭破限')
     assert.equal(on.items[0].style, 'primary')
     const off = panelView(snapshot({ enabled: false }), 'zh').children.at(-1)

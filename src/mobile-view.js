@@ -33,12 +33,10 @@ const WORDS = {
     on: '已开启',
     off: '已关闭',
     version: '插件版本',
-    update: '更新',
     modes: '适用模式',
     enable: '开启破限',
     disable: '关闭破限',
     recheck: '重新检测',
-    checkUpdate: '检查更新',
     hint: '开启后从下一轮对话起生效；关闭即恢复官方提示词。',
     issue: (text) => `该预设缺少 persona 段，已跳过注入（${text}）`,
     noHost: '引擎未提供状态接口',
@@ -46,13 +44,6 @@ const WORDS = {
     toggleOff: '已关闭破限',
     toggleFailed: '开关未生效，请到插件详情页设置',
     rechecked: '已重新检测',
-    updateIdle: '未检查',
-    updateChecking: '检测中',
-    updateAvailable: (v) => `有新版 v${v}`,
-    updateLatest: '已是最新',
-    updateUpdated: '已更新，重启引擎后生效',
-    updateFailed: '检查失败，可稍后再试',
-    updateStarted: '正在检查更新…',
     stripOn: (ready, total) => `破限 开 · ${ready}/${total}`,
     stripOff: '破限 关',
     stripFailed: '破限 注入异常',
@@ -63,12 +54,10 @@ const WORDS = {
     on: 'On',
     off: 'Off',
     version: 'Version',
-    update: 'Update',
     modes: 'Presets',
     enable: 'Enable',
     disable: 'Disable',
     recheck: 'Re-check',
-    checkUpdate: 'Check update',
     hint: 'Takes effect from the next turn; off restores the stock prompt.',
     issue: (text) => `This preset has no persona section, so fusion was skipped (${text})`,
     noHost: 'The engine exposes no status surface',
@@ -76,13 +65,6 @@ const WORDS = {
     toggleOff: 'Unrestricted mode off',
     toggleFailed: 'Switch failed — use the plugin settings page',
     rechecked: 'Re-checked',
-    updateIdle: 'Not checked',
-    updateChecking: 'Checking',
-    updateAvailable: (v) => `v${v} available`,
-    updateLatest: 'Up to date',
-    updateUpdated: 'Updated — restart the engine',
-    updateFailed: 'Check failed, try again',
-    updateStarted: 'Checking for updates…',
     stripOn: (ready, total) => `Unrestricted · ${ready}/${total}`,
     stripOff: 'Unrestricted · off',
     stripFailed: 'Unrestricted · fusion issue',
@@ -119,29 +101,6 @@ function firstIssue(snapshot) {
     if (typeof issue === 'string' && issue !== '') return issue
   }
   return undefined
-}
-
-/**
- * The update row's wording from the host's update snapshot.
- * @param {{state?: string, latestVersion?: string}} update - host update state.
- * @param {typeof WORDS.zh} w - word table.
- * @returns {string} one short line.
- */
-function updateText(update, w) {
-  switch (update?.state) {
-    case 'available':
-      return update.latestVersion === undefined ? w.updateAvailable('?') : w.updateAvailable(update.latestVersion)
-    case 'up-to-date':
-      return w.updateLatest
-    case 'updated':
-      return w.updateUpdated
-    case 'failed':
-      return w.updateFailed
-    case 'checking':
-      return w.updateChecking
-    default:
-      return w.updateIdle
-  }
 }
 
 /**
@@ -217,7 +176,6 @@ export function panelView(snapshot, locale) {
       type: 'keyValue',
       items: [
         { label: w.version, value: version },
-        { label: w.update, value: updateText(snapshot.update, w) },
       ],
     },
     {
@@ -235,7 +193,6 @@ export function panelView(snapshot, locale) {
     items: [
       { label: enabled ? w.disable : w.enable, action: 'toggle', icon: 'bolt', style: 'primary' },
       { label: w.recheck, action: 'recheck', icon: 'refresh' },
-      { label: w.checkUpdate, action: 'check-update', icon: 'download' },
     ],
   })
   return { type: 'stack', children }
@@ -243,14 +200,13 @@ export function panelView(snapshot, locale) {
 
 /**
  * Locale-resolved toast text for one panel action outcome.
- * @param {'toggle' | 'recheck' | 'check-update'} action - the tapped action id.
+ * @param {'toggle' | 'recheck'} action - the tapped action id.
  * @param {{ok: boolean, enabled?: boolean}} result - outcome from the host half.
  * @param {string} [locale] - app locale.
  */
 export function actionToast(action, result, locale) {
   const w = words(locale)
   if (action === 'recheck') return result.ok ? w.rechecked : w.toggleFailed
-  if (action === 'check-update') return result.ok ? w.updateStarted : w.updateFailed
   if (!result.ok) return w.toggleFailed
   return result.enabled === true ? w.toggleOn : w.toggleOff
 }
