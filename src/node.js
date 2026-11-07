@@ -37,7 +37,7 @@ import {
 export const name = 'dsh-unrestricted'
 
 /** Current plugin package version. */
-export const PLUGIN_VERSION = '0.2.7-mobile.1'
+export const PLUGIN_VERSION = '0.2.8-mobile.1'
 
 /**
  * Services this plugin cannot work without. `settings` is deliberately absent:

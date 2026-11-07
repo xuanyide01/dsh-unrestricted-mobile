@@ -4,7 +4,7 @@ DSH Go 是 DeepSeek Harness 的安卓客户端：它把**真正的 DSH 引擎**�
 
 手机端真正不同的只有四件事，这个分支就是针对它们做的：
 
-1. **引擎版本**：App 的运行时固定 DSH `0.2.1-rc.4`，桌面端是 `0.2.1-rc.5`。上游 0.2.5 起把引擎下限抬到了 `0.2.2-alpha.2`、删掉了老预设注册表（没有 `acquireScope`）的兜底路径，在手机上会被 `dsh plugin add` 直接拒装或装配失败。这里两条都保留：声明 `>=0.2.1-rc.2 <0.2.3-0`，并在 `presetAssembly()` 里保留 0.2.1 线的 `createScope` 兜底。
+1. **引擎版本**：App 的运行时现为 DSH `0.2.2-rc.1`（早期版本是 `0.2.1-rc.4`），桌面端是 `0.2.1-rc.5`。上游 0.2.5 起把引擎下限抬到了 `0.2.2-alpha.2`、删掉了老预设注册表（没有 `acquireScope`）的兜底路径，在手机上会被 `dsh plugin add` 直接拒装或装配失败。这里两条都保留：声明 `>=0.2.1-rc.2 <0.2.3-0`，并在 `presetAssembly()` 里保留 0.2.1 线的 `createScope` 兜底。
 2. **界面**：手机原生界面不跑 React，网页设置卡片在原生模式下根本不会加载。改成用 dsh-go 的原生通道：
    - 输入框上方**胶囊**（`composer.actions`）：`破限` / `Unrest`，一次点按切换开关。
    - 输入框上方**状态条**（`composer.strip`）：`破限 开 · 4/4` / `破限 关` / `破限 注入异常`。
@@ -54,9 +54,9 @@ dsh-unrestricted
 | 面板动作 3 秒内没回效果 | App 自己超时，插件侧把异常吞掉，不累计违规 |
 | 拿不到本插件对应的 loader 条目 | 面板开关返回「开关未生效，请到插件详情页设置」，不抛错 |
 
-## 在 0.2.1-rc.4 上实测
+## 在 0.2.1-rc.4 / 0.2.2-rc.1 上实测
 
-`tools/probe-rc4.mjs` 会装一份真实的 `@deepseek-ai/dsh@0.2.1-rc.4`，按手机的 `web` profile 组合（`dsh-base` + `dsh-web-app`）启动两次：一次不带插件、一次带插件，逐预设渲染真实系统提示词。实测结果（字节）：
+`tools/probe-rc4.mjs` 会装一份真实的 `@deepseek-ai/dsh`（0.2.1 或 0.2.2 线皆可），按手机的 `web` profile 组合（`dsh-base` + `dsh-web-app`）启动两次：一次不带插件、一次带插件，逐预设渲染真实系统提示词。实测结果（字节）：
 
 | 预设 | 原版 | 融合后 | 插入段 | 计划模式 |
 |---|---|---|---|---|
@@ -70,7 +70,7 @@ dsh-unrestricted
 复现：
 
 ```sh
-npm install --ignore-scripts @deepseek-ai/dsh@0.2.1-rc.4   # 任意目录，装进 <root>
+npm install --ignore-scripts @deepseek-ai/dsh@0.2.2-rc.1   # 任意目录，装进 <root>
 node tools/probe-rc4.mjs --root <root> --out <输出目录>
 ```
 
