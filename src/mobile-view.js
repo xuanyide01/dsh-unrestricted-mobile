@@ -33,6 +33,7 @@ const WORDS = {
     on: '已开启',
     off: '已关闭',
     version: '插件版本',
+    lastRun: '最近装配',
     modes: '适用模式',
     enable: '开启破限',
     disable: '关闭破限',
@@ -44,6 +45,8 @@ const WORDS = {
     toggleOff: '已关闭破限',
     toggleFailed: '开关未生效，请到插件详情页设置',
     rechecked: '已重新检测',
+    lastRunNever: '未检测',
+    lastRunText: (preset) => `${preset} · 已注入`,
     stripOn: (ready, total) => `破限 开 · ${ready}/${total}`,
     stripOff: '破限 关',
     stripFailed: '破限 注入异常',
@@ -54,6 +57,7 @@ const WORDS = {
     on: 'On',
     off: 'Off',
     version: 'Version',
+    lastRun: 'Last assembly',
     modes: 'Presets',
     enable: 'Enable',
     disable: 'Disable',
@@ -65,6 +69,8 @@ const WORDS = {
     toggleOff: 'Unrestricted mode off',
     toggleFailed: 'Switch failed — use the plugin settings page',
     rechecked: 'Re-checked',
+    lastRunNever: 'Not yet',
+    lastRunText: (preset) => `${preset} · fused`,
     stripOn: (ready, total) => `Unrestricted · ${ready}/${total}`,
     stripOff: 'Unrestricted · off',
     stripFailed: 'Unrestricted · fusion issue',
@@ -101,6 +107,13 @@ function firstIssue(snapshot) {
     if (typeof issue === 'string' && issue !== '') return issue
   }
   return undefined
+}
+
+/** Wording for the last top-level assembly the host half observed. */
+function lastRunText(last, w) {
+  const preset = typeof last?.presetId === 'string' && last.presetId !== '' ? last.presetId : undefined
+  if (preset === undefined) return w.lastRunNever
+  return last?.fused === false ? w.lastRunText(preset).replace(/ · .*$/, ' · 未注入') : w.lastRunText(preset)
 }
 
 /**
@@ -176,6 +189,7 @@ export function panelView(snapshot, locale) {
       type: 'keyValue',
       items: [
         { label: w.version, value: version },
+        { label: w.lastRun, value: lastRunText(snapshot.lastAssembly, w) },
       ],
     },
     {

@@ -119,7 +119,7 @@ test('fused output equals the original render plus only the documented fragments
   assert.ok(await originalOf('standard') === originalText)
 })
 
-test('structural fusion tolerates upstream wording edits while refusing missing personas and staying idempotent', async () => {
+test('structural fusion tolerates upstream wording edits, missing personas and unknown presets, and stays idempotent', async () => {
   const sections = await sectionsOf('standard')
 
   // Upstream wording tweaks in identity, persona, plan, or ptc-only do not break fusion.
@@ -143,16 +143,24 @@ test('structural fusion tolerates upstream wording edits while refusing missing 
   assert.equal(twice.issues, undefined)
   assert.deepEqual(twice.sections, fused.sections)
 
-  // Missing or blank deployment:persona-prefix is refused with structured issue code.
+  // A missing or blank deployment:persona-prefix no longer refuses fusion: the
+  // block still lands (behind the identity line) so a host that renames or
+  // drops the persona cannot silently disable the contract.
   const missingPersona = sections.filter(section => section.name !== 'deployment:persona-prefix')
-  assert.deepEqual(fuseSections(missingPersona, 'standard').issues, ['missing-persona'])
+  const withoutPersona = fuseSections(missingPersona, 'standard')
+  assert.equal(withoutPersona.issues, undefined)
+  assert.ok(withoutPersona.sections.some(section => section.name === BLOCK_SECTION))
   const blankPersona = sections.map(section =>
     section.name === 'deployment:persona-prefix' ? { ...section, text: '   ' } : section)
-  assert.deepEqual(fuseSections(blankPersona, 'standard').issues, ['missing-persona'])
+  const withoutPersonaText = fuseSections(blankPersona, 'standard')
+  assert.equal(withoutPersonaText.issues, undefined)
+  assert.ok(withoutPersonaText.sections.some(section => section.name === BLOCK_SECTION))
 })
 
-test('unknown presets are refused with unsupported-preset', () => {
-  assert.deepEqual(fuseSections([], 'my-custom-preset').issues, ['unsupported-preset'])
+test('unknown presets still receive the contract with the standard boundary rules', () => {
+  const fused = fuseSections([{ name: 'harness:identity', text: 'You are an AI agent.' }], 'my-custom-preset')
+  assert.equal(fused.issues, undefined)
+  assert.ok(fused.sections.some(section => section.name === BLOCK_SECTION))
 })
 
 test('minimal fused prompt is persona + pointer + block, anchors intact, and preserves structured_output', () => {

@@ -37,7 +37,7 @@ import {
 export const name = 'dsh-unrestricted'
 
 /** Current plugin package version. */
-export const PLUGIN_VERSION = '0.2.8-mobile.1'
+export const PLUGIN_VERSION = '0.2.8-mobile.2'
 
 /**
  * Services this plugin cannot work without. `settings` is deliberately absent:
@@ -101,6 +101,8 @@ export function apply(ctx, config = {}) {
     enabled: readEnabled(config),
     /** Listeners for the native (dsh-go) surfaces: status changed. */
     listeners: new Set(),
+    /** Last top-level assembly this plugin saw: { presetId, fused, names, at }. */
+    lastAssembly: undefined,
     /** presetId -> issue codes observed on live assemblies. */
     runtime: new Map(),
     /** Agent -> section disposer for minimal persona shadows. */
@@ -290,6 +292,7 @@ export function apply(ctx, config = {}) {
       enabled: state.enabled,
       version: PLUGIN_VERSION,
       modes,
+      lastAssembly: state.lastAssembly,
     }
   }
 
@@ -328,12 +331,12 @@ export function apply(ctx, config = {}) {
    * live fusion uses. Read-only — never mutates prompt state.
    */
   async function previewFor(presetId) {
-    if (!PRESETS.includes(presetId)) {
+    if (typeof presetId !== 'string' || presetId === '') {
       return {
         presetId,
         available: false,
         errorCode: 'unsupported-preset',
-        reason: `unknown preset "${presetId}"`,
+        reason: 'preview needs a preset id',
       }
     }
     const cached = state.fusedText.get(presetId)
@@ -457,10 +460,16 @@ export function apply(ctx, config = {}) {
     const agent = context.agent
     if (agent === undefined) return original
     const presetId = resolveAgentPreset(agent, original.sections)
-    if (presetId === undefined || !PRESET_RULES[presetId]) {
-      unshadowMinimal(agent)
-      return original
+    if (!original.contexts.some(entry => entry.name === 'subagent:delegation')) {
+      state.lastAssembly = {
+        presetId: presetId ?? 'unknown',
+        names: original.sections.map(section => section.name),
+        at: Date.now(),
+      }
     }
+    // An unknown or unreadable preset still receives the contract (standard
+    // boundary rules); dropping fusion there is what a host that adds presets
+    // would otherwise see as "the plugin stopped working".
     if (presetId === 'minimal') {
       if (state.shadows.has(agent)) {
         state.fusedText.set('minimal', state.fusedMinimal)
@@ -483,6 +492,7 @@ export function apply(ctx, config = {}) {
     }
     const isSubagent = original.contexts.some(entry => entry.name === 'subagent:delegation')
     const fused = fuseSections(original.sections, presetId, { isSubagent })
+    if (state.lastAssembly !== undefined) state.lastAssembly.fused = fused.issues === undefined
     if (fused.issues !== undefined) {
       state.runtime.set(presetId, fused.issues)
       return original

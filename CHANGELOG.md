@@ -1,5 +1,23 @@
 # 更新记录
 
+## 0.2.8-mobile.2
+
+针对 DSH Go 1.0.13（运行时 r15-dsh0.2.2-rc.1，补丁集换成 23bd7045）后「新对话破限不生效」的修复。
+
+- **融合不再因缺失 persona 段而放弃。** 之前 `fuseSections` 在装配里找不到
+  `deployment:persona-prefix` 时返回 `missing-persona`，整段回退官方原文；新运行时/新预设
+  若改了段名或不再提供该段，插件就会静默失效。现在：有 persona 就沿用原来的「追加指针」，
+  没有 persona 也照常插入 `unrestricted:execution-mode`（放在 `harness:identity` 之后，
+  都找不到就放最前）。
+- **未知/读不出的预设不再跳过。** `resolveAgentPreset()` 拿不到名字、或拿到插件不认识的
+  预设 id 时，按 standard 的边界规则注入，而不是原样放行。
+- **面板新增「最近装配」一行**：显示最近一次顶层装配的预设与注入结果
+  （`standard · 已注入` / `standard · 未注入` / `未检测`），用来区分「插件没跑」和
+  「模型自己拒」这两种情况。
+- 预览端点对未知预设也改为按 standard 规则渲染，不再直接报 `unsupported-preset`。
+- 测试 58 项（含「缺 persona 仍注入」「未知预设仍注入」两条新断言）、`plugin-kit check --load` 全绿；
+  在 `@deepseek-ai/dsh@0.2.2-rc.1` 上探针四预设融合正常（standard 4473→14972 B、ptc 53075→63976 B）。
+
 ## 0.2.8-mobile.1
 
 跟随上游 `0.2.8` 与 DSH Go `1.0.12`（运行时 r15，引擎升到 **dsh `0.2.2-rc.1`**，桥接仍 `0.4.0`）。

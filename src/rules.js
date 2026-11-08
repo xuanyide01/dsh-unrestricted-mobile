@@ -153,8 +153,9 @@ export function renderPreview(assembly, render) {
  *   structured error code when the preset is unsupported or lacks a persona.
  */
 export function fuseSections(sections, presetId, { isSubagent = false } = {}) {
-  const rules = PRESET_RULES[presetId]
-  if (rules === undefined) return { issues: ['unsupported-preset'] }
+  // Unknown presets (a host that adds or renames one) still get the contract:
+  // they take the standard boundary rules instead of silently skipping fusion.
+  const rules = PRESET_RULES[presetId] ?? PRESET_RULES.standard
   if (sections.some(section => section.name === BLOCK_SECTION)) {
     return { sections }
   }
@@ -164,9 +165,10 @@ export function fuseSections(sections, presetId, { isSubagent = false } = {}) {
   let fusedPersona = undefined
   if (persona !== undefined && persona.text.trim() !== '') {
     fusedPersona = { ...persona, text: appendOnce(persona.text, PERSONA_POINTER) }
-  } else if (!isSubagent) {
-    return { issues: ['missing-persona'] }
   }
+  // A missing persona is not a reason to leave the prompt stock: newer host
+  // compositions may name the persona differently or drop it entirely. The
+  // block is still inserted (behind the identity line when there is one).
 
   let fusedPlan = undefined
   const plan = byName.get('plan:policy')
