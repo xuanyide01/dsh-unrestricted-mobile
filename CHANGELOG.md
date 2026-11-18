@@ -1,5 +1,30 @@
 # 更新记录
 
+## 0.2.14-mobile.1
+
+跟随上游 `0.2.14` 与 DSH Go `1.2.0`（运行时 r15-dsh0.2.2-rc.1 补丁集 `9e1b5273`，引擎 `0.2.2-rc.1`，桥接 `0.4.0`）。
+
+上游 `0.2.9 → 0.2.14` 的累计改动：
+
+- **推理通道保护**：执行规则里新增 `Internal reasoning:` 段，要求每一步先做完整多步推理再输出，
+  不得跳过或压缩思考（防止「跳过思考降智」）；可见回复仍直接从交付物开始。
+- **脱敏宿主标识**：新增配置 `stripHostIdentity`，把 `harness:identity` / `harness:source` /
+  `app:web-surface` 里的 DSH 标记洗掉（`sanitizeSectionBrandText` / `stripHostIdentityFromAssembly`），
+  并清理 `sandbox:policy` 里残留的 DSH 标识。
+- **额外预设**：新增配置 `extraPresets`（字符串数组），除 four presets 外的自定义预设也能融合。
+- **RPC 重构**：新增 `src/rpc.js`，改用 Connection 的 `/api/dsh-unrestricted/<endpoint>` Fetch 路由
+  （不再依赖 `connection.rpc.handle()` 需要 `webServer` 的旧路径）；新增 `tests/rpc.spec.mjs`。
+- 网页卡片同步：新增「脱敏宿主标识」「额外预设」两个字段与对应文案。
+
+本分支处理：
+
+- 手机端适配照旧（`deps.js` 零硬依赖、`settings` 可选注入、0.2.1 线 `createScope` 兜底、
+  `readEnabled`→`readConfig` 读三个字段、胶囊/状态条/面板、`最近装配`）。
+- 原生面板新增「脱敏宿主标识」一行（只展示状态，开关在插件详情页 / 网页卡片）。
+- 融合继续保留容错：缺 `deployment:persona-prefix` 仍注入、未知预设按 standard 规则注入。
+- 年龄规则继续用本地改动（按用户说明，不回落「一律 18+」）。
+- 测试 63 项（含新增 `rpc.spec`）、`plugin-kit check --load` 全绿；`dsh 0.2.2-rc.1` 探针四预设融合正常。
+
 ## 0.2.9-mobile.1
 
 跟随上游 `0.2.9` 与 DSH Go `1.1.0`（运行时 r15-dsh0.2.2-rc.1 补丁集 `5b876309`，引擎 `0.2.2-rc.1`，桥接 `0.4.0`）。

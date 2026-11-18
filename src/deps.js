@@ -144,6 +144,18 @@ function node(kind, options = {}) {
 /** Coerce one field by its declared kind; undefined means "wrong type". */
 function coerce(declared, value) {
   if (declared?.kind === 'boolean') return typeof value === 'boolean' ? value : undefined
+  if (declared?.kind === 'string') return typeof value === 'string' ? value : undefined
+  if (declared?.kind === 'array') {
+    if (!Array.isArray(value)) return undefined
+    const inner = declared.of
+    const out = []
+    for (const item of value) {
+      const coerced = coerce(inner, item)
+      if (coerced === undefined) return undefined
+      out.push(coerced)
+    }
+    return out
+  }
   return value
 }
 
@@ -152,6 +164,21 @@ function normalize(state, raw) {
   if (state.kind === 'boolean') {
     if (raw === undefined) return { config: state.def ?? false }
     return typeof raw === 'boolean' ? { config: raw } : { issues: [{ message: 'expected a boolean', path: [] }] }
+  }
+  if (state.kind === 'string') {
+    if (raw === undefined) return { config: state.def ?? '' }
+    return typeof raw === 'string' ? { config: raw } : { issues: [{ message: 'expected a string', path: [] }] }
+  }
+  if (state.kind === 'array') {
+    if (raw === undefined) return { config: state.def ?? [] }
+    if (!Array.isArray(raw)) return { issues: [{ message: 'expected an array', path: [] }] }
+    const out = []
+    for (const item of raw) {
+      const coerced = coerce(state.of, item)
+      if (coerced === undefined) return { issues: [{ message: `expected ${state.of?.kind ?? 'a value'}`, path: [] }] }
+      out.push(coerced)
+    }
+    return { config: out }
   }
   if (raw !== undefined && raw !== null && (typeof raw !== 'object' || Array.isArray(raw))) {
     return { issues: [{ message: 'config must be an object', path: [] }] }
@@ -174,5 +201,7 @@ function normalize(state, raw) {
  */
 export const fallbackSchema = {
   boolean: () => node('boolean'),
+  string: () => node('string'),
+  array: (of) => node('array', { of }),
   object: (shape) => node('object', { shape }),
 }

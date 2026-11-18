@@ -34,6 +34,7 @@ const WORDS = {
     off: '已关闭',
     version: '插件版本',
     lastRun: '最近装配',
+    identity: '脱敏宿主标识',
     modes: '适用模式',
     enable: '开启破限',
     disable: '关闭破限',
@@ -58,6 +59,7 @@ const WORDS = {
     off: 'Off',
     version: 'Version',
     lastRun: 'Last assembly',
+    identity: 'Strip identity',
     modes: 'Presets',
     enable: 'Enable',
     disable: 'Disable',
@@ -190,6 +192,7 @@ export function panelView(snapshot, locale) {
       items: [
         { label: w.version, value: version },
         { label: w.lastRun, value: lastRunText(snapshot.lastAssembly, w) },
+        { label: w.identity, value: snapshot.stripHostIdentity === true ? w.on : w.off },
       ],
     },
     {

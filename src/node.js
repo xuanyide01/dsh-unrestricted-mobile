@@ -27,17 +27,18 @@ import { installMobile } from './mobile.js'
 import {
   ANCHORS,
   PRESETS,
-  PRESET_RULES,
   fuseSections,
   fusedMinimalPrompt,
   renderPreview,
+  stripHostIdentityFromAssembly,
 } from './rules.js'
+import { registerRpcRoutes } from './rpc.js'
 
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'dsh-unrestricted'
 
 /** Current plugin package version. */
-export const PLUGIN_VERSION = '0.2.9-mobile.1'
+export const PLUGIN_VERSION = '0.2.14-mobile.1'
 
 /**
  * Services this plugin cannot work without. `settings` is deliberately absent:
@@ -47,7 +48,6 @@ export const PLUGIN_VERSION = '0.2.9-mobile.1'
  */
 export const inject = ['systemPrompt', 'loader']
 
-const RPC_CHANNEL = '/dsh-unrestricted'
 // The engine's schemastery when reachable, a shape-compatible subset otherwise
 // (see deps.js). Either way `config.get()` and the settings form keep working.
 const schema = z ?? fallbackSchema
@@ -57,22 +57,31 @@ export const Config = schema.object({
     zh: '启用破限：把执行规则融合进当前预设的系统提示词，下一轮对话起生效',
     en: 'Enable unrestricted mode: fuse the execution rules into the active preset prompt, from the next turn',
   }),
-}).default({ enabled: false }).volatile()
+  stripHostIdentity: schema.boolean().default(false).description({
+    zh: '脱敏宿主标识：把 harness 身份段里的 DSH 标记去掉',
+    en: 'Strip host identity: remove the DSH markers from the harness identity sections',
+  }),
+  extraPresets: schema.array(schema.string()).default([]).description({
+    zh: '额外预设 id：除 standard/ptc/cordis/minimal 外也要融合的预设',
+    en: 'Extra preset ids to fuse besides standard/ptc/cordis/minimal',
+  }),
+}).default({ enabled: false, stripHostIdentity: false, extraPresets: [] }).volatile()
 
 /**
- * Read `enabled` from a Cordis config handle, a plain object, or nothing.
- * In the engine the second `apply` argument is the Schemastery-validated value
- * (`.get()`); a host that mounts the plugin without a schema passes the raw
- * object instead.
+ * Read the config from a Cordis handle, a plain object, or nothing.
  * @param {unknown} config - whatever the host handed us.
- * @returns {boolean} the toggle, defaulting to off.
+ * @returns {{enabled: boolean, stripHostIdentity: boolean, extraPresets: string[]}}
  */
-function readEnabled(config) {
+function readConfig(config) {
   try {
     const value = typeof config?.get === 'function' ? config.get() : config
-    return value?.enabled === true
+    return {
+      enabled: value?.enabled === true,
+      stripHostIdentity: value?.stripHostIdentity === true,
+      extraPresets: Array.isArray(value?.extraPresets) ? value.extraPresets.filter(item => typeof item === 'string') : [],
+    }
   } catch {
-    return false
+    return { enabled: false, stripHostIdentity: false, extraPresets: [] }
   }
 }
 
@@ -97,12 +106,11 @@ export function apply(ctx, config = {}) {
     settingsCtx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber))
   })
 
+  const initialConfig = readConfig(config)
   const state = {
-    enabled: readEnabled(config),
-    /** Listeners for the native (dsh-go) surfaces: status changed. */
-    listeners: new Set(),
-    /** Last top-level assembly this plugin saw: { presetId, fused, names, at }. */
-    lastAssembly: undefined,
+    enabled: Boolean(initialConfig.enabled),
+    stripHostIdentity: Boolean(initialConfig.stripHostIdentity),
+    extraPresets: new Set(initialConfig.extraPresets ?? []),
     /** presetId -> issue codes observed on live assemblies. */
     runtime: new Map(),
     /** Agent -> section disposer for minimal persona shadows. */
@@ -111,8 +119,10 @@ export function apply(ctx, config = {}) {
     customMinimal: new WeakSet(),
     /** Precomputed fused minimal prompt. */
     fusedMinimal: fusedMinimalPrompt(),
-    /** presetId -> last successfully fused top-level live assembly (the deploy preview). */
-    fusedText: new Map(),
+    /** Listeners for the native (dsh-go) surfaces: status changed. */
+    listeners: new Set(),
+    /** Last top-level assembly this plugin saw: { presetId, fused, names, at }. */
+    lastAssembly: undefined,
   }
 
   /**
@@ -223,7 +233,6 @@ export function apply(ctx, config = {}) {
       return
     }
     state.shadows.set(agent, dispose)
-    state.fusedText.set('minimal', state.fusedMinimal)
   }
 
   /** Synchronize minimal persona shadows across all live agents. */
@@ -252,7 +261,7 @@ export function apply(ctx, config = {}) {
 
   /**
    * Subscribe a native surface to status changes.
-   * @param {() => void} listener - called after a toggle, check, or recheck.
+   * @param {() => void} listener - called after a toggle or recheck.
    * @returns {() => void} unsubscribe.
    */
   function subscribe(listener) {
@@ -272,11 +281,10 @@ export function apply(ctx, config = {}) {
   function onDisable() {
     clearShadows()
     state.runtime.clear()
-    state.fusedText.clear()
     notify()
   }
 
-  /** Current card view: toggle, version, and per-preset state. */
+  /** Current card view: toggle, stripHostIdentity flag, version, and per-preset state. */
   function statusPayload() {
     const modes = {}
     for (const presetId of PRESETS) {
@@ -290,6 +298,7 @@ export function apply(ctx, config = {}) {
     }
     return {
       enabled: state.enabled,
+      stripHostIdentity: state.stripHostIdentity,
       version: PLUGIN_VERSION,
       modes,
       lastAssembly: state.lastAssembly,
@@ -339,24 +348,32 @@ export function apply(ctx, config = {}) {
         reason: 'preview needs a preset id',
       }
     }
-    const cached = state.fusedText.get(presetId)
-    if (cached !== undefined) {
-      return { presetId, available: true, source: 'live', ...summarize(cached) }
-    }
     try {
       const assembly = await presetAssembly(presetId)
-      const fused = presetId === 'minimal'
-        ? { sections: [{ name: 'deployment:persona-prefix', text: fusedMinimalPrompt() }] }
-        : fuseSections(assembly.sections, presetId)
-      if (fused.issues !== undefined) {
-        return {
-          presetId,
-          available: false,
-          errorCode: 'missing-persona',
-          reason: fused.issues.join('; '),
+      let previewAssembly
+      if (presetId === 'minimal') {
+        previewAssembly = {
+          ...assembly,
+          sections: [{ name: 'deployment:persona-prefix', text: fusedMinimalPrompt() }],
         }
+      } else {
+        const fused = fuseSections(assembly.sections, presetId, {
+          allowDynamicPreset: state.extraPresets.has(presetId),
+        })
+        if (fused.issues !== undefined) {
+          return {
+            presetId,
+            available: false,
+            errorCode: 'missing-persona',
+            reason: fused.issues.join('; '),
+          }
+        }
+        previewAssembly = { ...assembly, sections: fused.sections }
       }
-      const variables = { ...assembly.variables, ...previewVariables() }
+      if (state.stripHostIdentity) {
+        previewAssembly = stripHostIdentityFromAssembly(previewAssembly)
+      }
+      const variables = { ...previewAssembly.variables, ...previewVariables() }
       if (renderPrompt === undefined) {
         // Fusion itself needs no renderer; only this preview text does.
         return {
@@ -366,7 +383,7 @@ export function apply(ctx, config = {}) {
           reason: 'preview needs @deepseek-ai/dsh-system-prompt, which this host does not expose',
         }
       }
-      const text = renderPreview({ ...assembly, sections: fused.sections, variables }, renderPrompt)
+      const text = renderPreview({ ...previewAssembly, variables }, renderPrompt)
       return { presetId, available: true, source: 'standing', ...summarize(text) }
     } catch (error) {
       return {
@@ -423,7 +440,6 @@ export function apply(ctx, config = {}) {
   /** Re-run the live status from scratch (native panel and RPC `recheck`). */
   async function recheckAll() {
     state.runtime.clear()
-    state.fusedText.clear()
     if (state.enabled) sweepAgents()
     notify()
     return statusPayload()
@@ -456,56 +472,65 @@ export function apply(ctx, config = {}) {
 
   ctx.on('system-prompt/assemble', async (assembly, context, next) => {
     const original = await next()
-    if (!state.enabled) return original
+    if (!state.enabled && !state.stripHostIdentity) return original
     const agent = context.agent
     if (agent === undefined) return original
     const presetId = resolveAgentPreset(agent, original.sections)
+    // An unknown or unreadable preset still receives the contract (standard
+    // boundary rules); dropping fusion there is what a host that adds presets
+    // would otherwise see as "the plugin stopped working".
+    if (presetId === undefined) {
+      unshadowMinimal(agent)
+      return original
+    }
     if (!original.contexts.some(entry => entry.name === 'subagent:delegation')) {
       state.lastAssembly = {
-        presetId: presetId ?? 'unknown',
+        presetId,
         names: original.sections.map(section => section.name),
         at: Date.now(),
       }
     }
-    // An unknown or unreadable preset still receives the contract (standard
-    // boundary rules); dropping fusion there is what a host that adds presets
-    // would otherwise see as "the plugin stopped working".
+
+    let current = original
+
     if (presetId === 'minimal') {
-      if (state.shadows.has(agent)) {
-        state.fusedText.set('minimal', state.fusedMinimal)
-        return original
-      }
-      syncMinimalShadow(agent)
-      if (state.customMinimal.has(agent)) {
-        const fused = fuseSections(original.sections, 'minimal', { isSubagent: true })
-        if (fused.issues !== undefined) {
-          state.runtime.set('minimal', fused.issues)
-          return original
+      if (state.enabled) {
+        if (!state.shadows.has(agent)) syncMinimalShadow(agent)
+        if (state.customMinimal.has(agent)) {
+          const fused = fuseSections(current.sections, 'minimal', { isSubagent: true })
+          if (fused.issues !== undefined) {
+            state.runtime.set('minimal', fused.issues)
+            return state.stripHostIdentity ? stripHostIdentityFromAssembly(current) : current
+          }
+          state.runtime.delete('minimal')
+          current = { ...current, sections: fused.sections }
         }
-        state.runtime.delete('minimal')
-        return { ...original, sections: fused.sections }
+      } else if (state.shadows.has(agent)) {
+        unshadowMinimal(agent)
       }
-      return original
+      return state.stripHostIdentity ? stripHostIdentityFromAssembly(current) : current
     }
+
     if (state.shadows.has(agent)) {
       unshadowMinimal(agent)
     }
-    const isSubagent = original.contexts.some(entry => entry.name === 'subagent:delegation')
-    const fused = fuseSections(original.sections, presetId, { isSubagent })
-    if (state.lastAssembly !== undefined) state.lastAssembly.fused = fused.issues === undefined
-    if (fused.issues !== undefined) {
-      state.runtime.set(presetId, fused.issues)
-      return original
-    }
-    state.runtime.delete(presetId)
-    if (!isSubagent && renderPrompt !== undefined) {
-      try {
-        state.fusedText.set(presetId, renderPreview({ ...original, sections: fused.sections }, renderPrompt))
-      } catch {
-        state.fusedText.delete(presetId)
+
+    if (state.enabled) {
+      const isSubagent = current.contexts.some(entry => entry.name === 'subagent:delegation')
+      const fused = fuseSections(current.sections, presetId, {
+        isSubagent,
+        allowDynamicPreset: true,
+      })
+      if (state.lastAssembly !== undefined) state.lastAssembly.fused = fused.issues === undefined
+      if (fused.issues !== undefined) {
+        state.runtime.set(presetId, fused.issues)
+        return state.stripHostIdentity ? stripHostIdentityFromAssembly(current) : current
       }
+      state.runtime.delete(presetId)
+      current = { ...current, sections: fused.sections }
     }
-    return { ...original, sections: fused.sections }
+
+    return state.stripHostIdentity ? stripHostIdentityFromAssembly(current) : current
   })
 
   ctx.on('agent/created', ({ agent }) => {
@@ -531,7 +556,10 @@ export function apply(ctx, config = {}) {
 
   ctx.effect(() => {
     const unwatch = ctx.on('loader/volatile-update', () => {
-      const enabled = readEnabled(config)
+      const nextConfig = readConfig(config)
+      const enabled = nextConfig.enabled
+      state.stripHostIdentity = nextConfig.stripHostIdentity
+      state.extraPresets = new Set(nextConfig.extraPresets)
       if (enabled === state.enabled) return
       state.enabled = enabled
       if (enabled) onEnable()
@@ -545,12 +573,9 @@ export function apply(ctx, config = {}) {
     }
   }, 'dsh-unrestricted: toggle lifecycle')
 
-  // Web/Desktop 状态通道由官方 Connection 认证；headless 组合无需提供 connection 服务。
+  // 挂载到 Connection 自有的 /api 共享通道下，无需依赖 connection 自身注入 webServer。
   ctx.inject(['connection'], (connectionCtx) => {
-    const disposeRpc = connectionCtx.connection.rpc.handle(RPC_CHANNEL, handleRpc)
-    return async () => {
-      await disposeRpc()
-    }
+    return registerRpcRoutes(connectionCtx.connection, handleRpc)
   })
 
   // DSH Go（Android）原生界面：胶囊 + 状态条 + 面板。只在带 dsh-go 桥接的
