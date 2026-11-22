@@ -1,5 +1,16 @@
 # 更新记录
 
+## 0.2.15-mobile.1
+
+跟随上游 `0.2.15` 与 DSH Go `1.3.0`（运行时 r15-dsh0.2.2-rc.1 补丁集 `7ded3ec2`，引擎 `0.2.2-rc.1`，桥接 `0.4.0`）。
+
+- 上游 `0.2.15` 是**快照对齐**版本：`tests/fixtures/` 换成 DSH `0.2.2-rc.4` 的提示词、
+  段落与工具目录（含 `meta.json`、ptc/standard/cordis/minimal 的快照），代码只有版本号变化。
+- `src/rules.js` / `src/node.js` / `src/rpc.js` 与 `0.2.14` 相同；手机端适配、容错融合与
+  年龄规则本地改动原样保留。
+- 验证：单测 63 项、`plugin-kit check --load` 全绿；`dsh 0.2.2-rc.1` 探针四预设融合正常
+  （standard 4473→14440 B、ptc 53189→63558 B、cordis 4473→14440 B、minimal 46→10013 B）。
+
 ## 0.2.14-mobile.1
 
 跟随上游 `0.2.14` 与 DSH Go `1.2.0`（运行时 r15-dsh0.2.2-rc.1 补丁集 `9e1b5273`，引擎 `0.2.2-rc.1`，桥接 `0.4.0`）。

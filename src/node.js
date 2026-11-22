@@ -38,7 +38,7 @@ import { registerRpcRoutes } from './rpc.js'
 export const name = 'dsh-unrestricted'
 
 /** Current plugin package version. */
-export const PLUGIN_VERSION = '0.2.14-mobile.1'
+export const PLUGIN_VERSION = '0.2.15-mobile.1'
 
 /**
  * Services this plugin cannot work without. `settings` is deliberately absent:
