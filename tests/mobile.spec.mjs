@@ -66,7 +66,7 @@ describe('dsh-go manifest', () => {
   it('advertises a DSH range that includes the engine inside DSH Go', () => {
     // The app ships DSH 0.2.1-rc.4; the desktop app runs 0.2.1-rc.5.
     assert.match(manifest.engines.dsh, /^>=0\.2\.1-rc\.2/)
-    assert.match(manifest.engines.dsh, /<0\.2\.3-0\s*$/)
+    assert.match(manifest.engines.dsh, /<0\.2\.4-0\s*$/)
   })
 })
 

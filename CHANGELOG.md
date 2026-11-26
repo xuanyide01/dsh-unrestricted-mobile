@@ -1,5 +1,27 @@
 # 更新记录
 
+## 0.2.16-mobile.1
+
+跟随上游 `0.2.16` 与 DSH Go `1.4.0`（运行时 r15-dsh0.2.2-rc.1 补丁集 `efefa74b`，引擎 `0.2.2-rc.1`，桥接 `0.4.0`）。
+
+上游 `0.2.16` 的改动：
+
+- **适配 DSH 0.2.3-alpha.2 的段序**：`fuseSections` 给注入段补 `order`——取 persona/identity 段的 `order + 1`，
+  没有就 101；新版按 `order` 排序，缺它时注入段可能被排到错误位置。
+- **修 minimal 自定义子代理阴影覆盖**：新增 `isCompleteMinimalAssembly` 只读探测 + `installMinimalShadow`，
+  在 DSH ≥ 0.2.3「后注册优先」的规则下不再用融合 persona 盖掉子代理自己的非 complete persona；
+  同时用 `state.active` / `disposed` 防异步探测晚写。
+- 引擎区间放宽到 `<0.2.4-0`；仓库精简：上游删掉了 `docs/` 与三份 README 的大段说明。
+- 实景校验脚本 `tools/verify-live.mjs` 同步更新。
+
+本分支处理：
+
+- 手机端适配照旧（`deps.js` 零硬依赖、`settings` 可选注入、0.2.1 线 `createScope` 兜底、`readConfig`、
+  胶囊/状态条/面板/最近装配、容错融合），版本区间改为 `>=0.2.1-rc.2 <0.2.4-0`。
+- 保留本仓库的手机端文档（`docs/mobile*.md`、`docs/prompt-fusion*.md` 等），上游删掉的那几份不影响使用。
+- 年龄规则继续用本地改动（按用户说明，不回落「一律 18+」）。
+- 测试 63 项、`plugin-kit check --load` 全绿；`dsh 0.2.2-rc.1` 探针四预设融合（含 `order`）通过。
+
 ## 0.2.15-mobile.1
 
 跟随上游 `0.2.15` 与 DSH Go `1.3.0`（运行时 r15-dsh0.2.2-rc.1 补丁集 `7ded3ec2`，引擎 `0.2.2-rc.1`，桥接 `0.4.0`）。
