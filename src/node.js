@@ -26,10 +26,13 @@ import { fallbackSchema, renderPrompt, z } from './deps.js'
 import { installMobile } from './mobile.js'
 import {
   ANCHORS,
+  EXECUTION_MODE_BLOCK,
   PRESETS,
   fuseSections,
   fusedMinimalPrompt,
+  normalizePromptText,
   renderPreview,
+  resolveExecutionModeBlock,
   stripHostIdentityFromAssembly,
 } from './rules.js'
 import { registerRpcRoutes } from './rpc.js'
@@ -38,7 +41,7 @@ import { registerRpcRoutes } from './rpc.js'
 export const name = 'dsh-unrestricted'
 
 /** Current plugin package version. */
-export const PLUGIN_VERSION = '0.2.16-mobile.1'
+export const PLUGIN_VERSION = '0.2.17-mobile.1'
 
 /**
  * Services this plugin cannot work without. `settings` is deliberately absent:
@@ -61,16 +64,20 @@ export const Config = schema.object({
     zh: '脱敏宿主标识：把 harness 身份段里的 DSH 标记去掉',
     en: 'Strip host identity: remove the DSH markers from the harness identity sections',
   }),
+  customPrompt: schema.string().default('').description({
+    zh: '自定义破限提示词：留空用内置默认规则，填写后整段替换',
+    en: 'Custom unrestricted prompt: leave empty for the built-in block, or replace it entirely',
+  }),
   extraPresets: schema.array(schema.string()).default([]).description({
     zh: '额外预设 id：除 standard/ptc/cordis/minimal 外也要融合的预设',
     en: 'Extra preset ids to fuse besides standard/ptc/cordis/minimal',
   }),
-}).default({ enabled: false, stripHostIdentity: false, extraPresets: [] }).volatile()
+}).default({ enabled: false, stripHostIdentity: false, customPrompt: '', extraPresets: [] }).volatile()
 
 /**
  * Read the config from a Cordis handle, a plain object, or nothing.
  * @param {unknown} config - whatever the host handed us.
- * @returns {{enabled: boolean, stripHostIdentity: boolean, extraPresets: string[]}}
+ * @returns {{enabled: boolean, stripHostIdentity: boolean, customPrompt: string, extraPresets: string[]}}
  */
 function readConfig(config) {
   try {
@@ -78,10 +85,11 @@ function readConfig(config) {
     return {
       enabled: value?.enabled === true,
       stripHostIdentity: value?.stripHostIdentity === true,
+      customPrompt: typeof value?.customPrompt === 'string' ? value.customPrompt : '',
       extraPresets: Array.isArray(value?.extraPresets) ? value.extraPresets.filter(item => typeof item === 'string') : [],
     }
   } catch {
-    return { enabled: false, stripHostIdentity: false, extraPresets: [] }
+    return { enabled: false, stripHostIdentity: false, customPrompt: '', extraPresets: [] }
   }
 }
 
@@ -107,10 +115,14 @@ export function apply(ctx, config = {}) {
   })
 
   const initialConfig = readConfig(config)
+  const initialCustomPrompt = normalizePromptText(initialConfig.customPrompt)
+  const initialPromptBlock = resolveExecutionModeBlock(initialCustomPrompt)
   const state = {
     active: true,
     enabled: Boolean(initialConfig.enabled),
     stripHostIdentity: Boolean(initialConfig.stripHostIdentity),
+    customPrompt: initialCustomPrompt,
+    promptBlock: initialPromptBlock,
     extraPresets: new Set(initialConfig.extraPresets ?? []),
     /** presetId -> issue codes observed on live assemblies. */
     runtime: new Map(),
@@ -122,12 +134,16 @@ export function apply(ctx, config = {}) {
     probingMinimal: new WeakSet(),
     /** Agents already disposed, guarding async shadow probes against late writes. */
     disposed: new WeakSet(),
-    /** Precomputed fused minimal prompt. */
-    fusedMinimal: fusedMinimalPrompt(),
+    /** Precomputed fused minimal prompt for the active prompt block. */
+    fusedMinimal: fusedMinimalPrompt('', initialPromptBlock),
     /** Listeners for the native (dsh-go) surfaces: status changed. */
     listeners: new Set(),
     /** Last top-level assembly this plugin saw: { presetId, fused, names, at }. */
     lastAssembly: undefined,
+  }
+
+  function isCustomPromptActive() {
+    return state.customPrompt.trim() !== '' && state.promptBlock !== EXECUTION_MODE_BLOCK
   }
 
   /**
@@ -230,12 +246,13 @@ export function apply(ctx, config = {}) {
         name: 'deployment:persona-prefix',
         order: 0,
         complete: true,
+        interpolate: false,
         text: (context) => {
           const hasStructured = context?.agent?.ctx?.tools
             ?.schemas?.(context.agent)
             ?.some(tool => tool.name === 'structured_output') === true
           return hasStructured
-            ? fusedMinimalPrompt(ANCHORS.structuredOutputFull)
+            ? fusedMinimalPrompt(ANCHORS.structuredOutputFull, state.promptBlock)
             : state.fusedMinimal
         },
       })
@@ -344,6 +361,9 @@ export function apply(ctx, config = {}) {
     return {
       enabled: state.enabled,
       stripHostIdentity: state.stripHostIdentity,
+      customPrompt: state.customPrompt,
+      defaultPrompt: EXECUTION_MODE_BLOCK,
+      isCustomPrompt: isCustomPromptActive(),
       version: PLUGIN_VERSION,
       modes,
       lastAssembly: state.lastAssembly,
@@ -399,11 +419,17 @@ export function apply(ctx, config = {}) {
       if (presetId === 'minimal') {
         previewAssembly = {
           ...assembly,
-          sections: [{ name: 'deployment:persona-prefix', text: fusedMinimalPrompt() }],
+          sections: [{
+            name: 'deployment:persona-prefix',
+            order: 0,
+            interpolate: false,
+            text: fusedMinimalPrompt('', state.promptBlock),
+          }],
         }
       } else {
         const fused = fuseSections(assembly.sections, presetId, {
           allowDynamicPreset: state.extraPresets.has(presetId),
+          customPrompt: state.promptBlock,
         })
         if (fused.issues !== undefined) {
           return {
@@ -550,7 +576,10 @@ export function apply(ctx, config = {}) {
           }
         }
         if (state.customMinimal.has(agent)) {
-          const fused = fuseSections(current.sections, 'minimal', { isSubagent: true })
+          const fused = fuseSections(current.sections, 'minimal', {
+            isSubagent: true,
+            customPrompt: state.promptBlock,
+          })
           if (fused.issues !== undefined) {
             state.runtime.set('minimal', fused.issues)
             return state.stripHostIdentity ? stripHostIdentityFromAssembly(current) : current
@@ -573,6 +602,7 @@ export function apply(ctx, config = {}) {
       const fused = fuseSections(current.sections, presetId, {
         isSubagent,
         allowDynamicPreset: true,
+        customPrompt: state.promptBlock,
       })
       if (state.lastAssembly !== undefined) state.lastAssembly.fused = fused.issues === undefined
       if (fused.issues !== undefined) {
@@ -612,7 +642,11 @@ export function apply(ctx, config = {}) {
     const unwatch = ctx.on('loader/volatile-update', () => {
       const nextConfig = readConfig(config)
       const enabled = nextConfig.enabled
+      const nextCustomPrompt = normalizePromptText(nextConfig.customPrompt)
       state.stripHostIdentity = nextConfig.stripHostIdentity
+      state.customPrompt = nextCustomPrompt
+      state.promptBlock = resolveExecutionModeBlock(nextCustomPrompt)
+      state.fusedMinimal = fusedMinimalPrompt('', state.promptBlock)
       state.extraPresets = new Set(nextConfig.extraPresets)
       if (enabled === state.enabled) return
       state.enabled = enabled

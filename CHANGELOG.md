@@ -1,5 +1,25 @@
 # 更新记录
 
+## 0.2.17-mobile.1
+
+跟随上游 `0.2.17` 与 DSH Go `1.4.1`（运行时 r15-dsh0.2.2-rc.1 补丁集 `efefa74b`，引擎 `0.2.2-rc.1`，桥接 `0.4.0`）。
+
+上游 `0.2.17`：**自定义破限提示词**。
+
+- 新增配置 `customPrompt`（字符串）：留空用内置默认段落，填写后整段替换融合进提示词；
+  `resolveExecutionModeBlock` / `normalizePromptText` 负责归一化（CRLF→LF、空白回退默认）。
+- 注入段与 minimal persona 段都加 `interpolate: false`，自定义文本里的 `{{…}}` 不会被渲染器替换。
+- `status` 新增 `customPrompt` / `defaultPrompt` / `isCustomPrompt`；网页卡片新增编辑器与「恢复默认」按钮。
+- minimal 的完整 persona 与预览都改用当前生效的自定义段落；配置热更新时同步刷新 `promptBlock` 与 `fusedMinimal`。
+
+本分支处理：
+
+- 手机端适配照旧（`deps.js` 零硬依赖、`settings` 可选注入、0.2.1 线 `createScope` 兜底、
+  `readConfig` 读四个字段、胶囊/状态条/面板/最近装配、容错融合）。
+- 原生面板新增「提示词」一行：`内置默认` / `自定义`（编辑与恢复默认在插件详情页/网页卡片）。
+- 年龄规则继续用本地改动（按用户说明，不回落「一律 18+」）。
+- 测试 66 项（含自定义提示词用例）、`plugin-kit check --load` 全绿；`dsh 0.2.2-rc.1` 探针四预设融合通过。
+
 ## 0.2.16-mobile.1
 
 跟随上游 `0.2.16` 与 DSH Go `1.4.0`（运行时 r15-dsh0.2.2-rc.1 补丁集 `efefa74b`，引擎 `0.2.2-rc.1`，桥接 `0.4.0`）。
